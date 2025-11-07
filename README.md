@@ -50,13 +50,30 @@ REST API for querying current odds from Alexandria DB.
 
 [Full Documentation](./api-gateway/README.md)
 
-### WebSocket Broadcaster 🔜 (v0 - Planned)
-Consumes normalized odds stream and broadcasts to web clients.
+### WebSocket Broadcaster ✅ (v0 - Complete)
+Consumes normalized odds streams and broadcasts to web clients in real-time.
 
 **Features:**
-- Real-time WebSocket connections
-- Room-based filtering (by sport, event, book)
-- Connection management
+- Ultra-low latency (<100ms stream-to-client)
+- Client-side filtering (sports, events, markets, books)
+- Backpressure handling with automatic slow client disconnection
+- Configuration-based multi-sport support (no code changes to add sports)
+- Hub pattern for efficient broadcast management
+- Health and metrics endpoints
+
+**Endpoints:**
+- `ws://host/ws` - WebSocket connection
+- `GET /health` - Health check
+- `GET /metrics` - Connection and broadcast metrics
+
+**Status:** Production-ready
+- Modular architecture following Mercury/Normalizer patterns
+- Configuration-driven sport support
+- Comprehensive integration tests
+- Non-blocking sends
+- Graceful shutdown
+
+[Full Documentation](./ws-broadcaster/README.md)
 
 ### Future Services (v1+)
 - **Edge Detector** - Identifies middles, scalps, arbitrage
