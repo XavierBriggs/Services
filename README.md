@@ -22,13 +22,33 @@ Processes raw odds from Mercury, removes vig, calculates fair prices and edges.
 
 [Full Documentation](./normalizer/README.md)
 
-### API Gateway 🔜 (v0 - Planned)
+### API Gateway ✅ (v0 - Complete)
 REST API for querying current odds from Alexandria DB.
 
-**Planned Endpoints:**
-- `GET /odds/current` - Current odds for all events
-- `GET /odds/event/:id` - Odds for specific event
-- `GET /odds/edges` - Positive EV opportunities
+**Features:**
+- Clean architecture (handlers/db/models separation)
+- Interface-driven design for testability
+- CORS support for web UI
+- Graceful shutdown
+
+**Endpoints:**
+- `GET /health` - Health check
+- `GET /api/v1/events` - List events with filtering
+- `GET /api/v1/events/{eventID}` - Get single event
+- `GET /api/v1/events/{eventID}/odds` - Event with current odds
+- `GET /api/v1/odds/current` - Current odds with filtering
+- `GET /api/v1/odds/history` - Historical odds data
+
+**Status:** Production-ready
+- Interface-driven design
+- Comprehensive error handling
+- Request logging with latency tracking
+- Connection pooling configured
+- 16+ unit tests passing
+- 7+ integration tests passing
+- ~90% test coverage
+
+[Full Documentation](./api-gateway/README.md)
 
 ### WebSocket Broadcaster 🔜 (v0 - Planned)
 Consumes normalized odds stream and broadcasts to web clients.
