@@ -4,15 +4,15 @@ import "time"
 
 // RawOdds represents raw odds from Mercury (matches Mercury's model)
 type RawOdds struct {
-	EventID          string
-	SportKey         string
-	MarketKey        string
-	BookKey          string
-	OutcomeName      string
-	Price            int       // American odds
-	Point            *float64  // For spreads/totals
-	VendorLastUpdate time.Time
-	ReceivedAt       time.Time
+	EventID          string    `json:"event_id"`
+	SportKey         string    `json:"sport_key"`
+	MarketKey        string    `json:"market_key"`
+	BookKey          string    `json:"book_key"`
+	OutcomeName      string    `json:"outcome_name"`
+	Price            int       `json:"price"`              // American odds
+	Point            *float64  `json:"point,omitempty"`    // For spreads/totals
+	VendorLastUpdate time.Time `json:"vendor_last_update"`
+	ReceivedAt       time.Time `json:"received_at"`
 }
 
 // NormalizedOdds represents odds after normalization with fair prices and edges

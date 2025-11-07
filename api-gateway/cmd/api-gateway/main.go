@@ -135,7 +135,10 @@ func loadConfig() Config {
 		Port:          getEnv("API_GATEWAY_PORT", ":8080"),
 		AlexandriaDSN: getEnv("ALEXANDRIA_DSN", "postgres://fortuna_dev:fortuna_dev_password@localhost:5435/alexandria?sslmode=disable"),
 		CORSOrigins:   []string{
-			getEnv("CORS_ORIGIN", "http://localhost:3000"),
+			"http://localhost:3000",
+			"http://localhost:3001",
+			"http://localhost:3002",
+			"http://localhost:3003",
 		},
 	}
 }

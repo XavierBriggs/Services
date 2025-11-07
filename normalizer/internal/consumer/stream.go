@@ -75,6 +75,8 @@ func (c *StreamConsumer) ConsumeStream(ctx context.Context, streamKey string) (<
 
 // readMessages reads a batch of messages from the stream
 func (c *StreamConsumer) readMessages(ctx context.Context, streamKey string) ([]Message, error) {
+	fmt.Printf("CONSUMER: Reading from stream %s\n", streamKey)
+	
 	// Read from consumer group
 	streams, err := c.redis.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    c.groupName,
@@ -83,6 +85,8 @@ func (c *StreamConsumer) readMessages(ctx context.Context, streamKey string) ([]
 		Count:    c.batchSize,
 		Block:    c.blockTime,
 	}).Result()
+	
+	fmt.Printf("CONSUMER: Got %d streams with messages\n", len(streams))
 
 	if err != nil {
 		if err == redis.Nil {
@@ -99,8 +103,12 @@ func (c *StreamConsumer) readMessages(ctx context.Context, streamKey string) ([]
 			// Parse message data
 			data, ok := xmsg.Values["data"].(string)
 			if !ok {
+				fmt.Printf("DEBUG %s: no 'data' field\n", xmsg.ID)
 				continue
 			}
+
+			// DEBUG: Print raw JSON
+			fmt.Printf("DEBUG %s: raw JSON: %s\n", xmsg.ID, data[:200])
 
 			var rawOdds models.RawOdds
 			if err := json.Unmarshal([]byte(data), &rawOdds); err != nil {
@@ -109,6 +117,10 @@ func (c *StreamConsumer) readMessages(ctx context.Context, streamKey string) ([]
 				c.ackMessage(context.Background(), streamKey, xmsg.ID)
 				continue
 			}
+			
+			// DEBUG: Print parsed odds with all fields
+			fmt.Printf("DEBUG %s: PARSED - sport_key='%s' (len=%d) event_id='%s' market='%s' book='%s' price=%d\n", 
+				xmsg.ID, rawOdds.SportKey, len(rawOdds.SportKey), rawOdds.EventID, rawOdds.MarketKey, rawOdds.BookKey, rawOdds.Price)
 
 			messages = append(messages, Message{
 				ID:       xmsg.ID,

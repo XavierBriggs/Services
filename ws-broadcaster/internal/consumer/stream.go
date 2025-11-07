@@ -125,6 +125,9 @@ func (sc *StreamConsumer) processMessage(ctx context.Context, stream string, msg
 		return
 	}
 
+	fmt.Printf("📤 Broadcasting odds: sport=%s market=%s book=%s outcome=%s\n", 
+		oddsUpdate.SportKey, oddsUpdate.MarketKey, oddsUpdate.BookKey, oddsUpdate.OutcomeName)
+
 	// Broadcast to connected clients
 	sc.hub.Broadcast(oddsUpdate)
 

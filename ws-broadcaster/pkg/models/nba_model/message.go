@@ -26,7 +26,6 @@ type ServerMessage struct {
 }
 
 // OddsUpdate represents normalized odds data for broadcast
-// Matches the Normalizer's NormalizedOdds output
 type OddsUpdate struct {
 	// Raw odds data
 	EventID          string    `json:"event_id"`

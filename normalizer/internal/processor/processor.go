@@ -102,6 +102,10 @@ func (p *Processor) processStream(ctx context.Context, streamKey string) {
 
 // processMessage processes a single raw odds message
 func (p *Processor) processMessage(ctx context.Context, msg consumer.Message) error {
+	// DEBUG: Print what we received
+	fmt.Printf("PROCESSOR DEBUG %s: sport_key='%s' (len=%d) event_id='%s' book='%s'\n",
+		msg.ID, msg.RawOdds.SportKey, len(msg.RawOdds.SportKey), msg.RawOdds.EventID, msg.RawOdds.BookKey)
+	
 	// Get the appropriate normalizer for this sport
 	normalizer, exists := p.registry.Get(msg.RawOdds.SportKey)
 	if !exists {
