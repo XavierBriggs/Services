@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -33,8 +35,19 @@ func main() {
 
 	fmt.Println("✓ Connected to Alexandria DB")
 
+	// Connect to Holocron DB (raw sql.DB for OpportunityHandler)
+	holocronDB, err := connectDB(config.HolocronDSN)
+	if err != nil {
+		fmt.Printf("❌ Failed to connect to Holocron: %v\n", err)
+		os.Exit(1)
+	}
+	defer holocronDB.Close()
+
+	fmt.Println("✓ Connected to Holocron DB")
+
 	// Initialize handlers
 	handler := handlers.NewHandler(dbClient)
+	opportunityHandler := handlers.NewOpportunityHandler(holocronDB)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -69,6 +82,11 @@ func main() {
 		// Odds
 		r.Get("/odds/current", handler.GetCurrentOdds)
 		r.Get("/odds/history", handler.GetOddsHistory)
+
+		// Opportunities
+		r.Get("/opportunities", opportunityHandler.GetOpportunities)
+		r.Get("/opportunities/{id}", opportunityHandler.GetOpportunity)
+		r.Post("/opportunities/{id}/actions", opportunityHandler.CreateOpportunityAction)
 	})
 
 	// Start server
@@ -91,6 +109,9 @@ func main() {
 		fmt.Println("    GET  /api/v1/events/{eventID}/odds")
 		fmt.Println("    GET  /api/v1/odds/current")
 		fmt.Println("    GET  /api/v1/odds/history")
+		fmt.Println("    GET  /api/v1/opportunities")
+		fmt.Println("    GET  /api/v1/opportunities/{id}")
+		fmt.Println("    POST /api/v1/opportunities/{id}/actions")
 
 		serverErrors <- srv.ListenAndServe()
 	}()
@@ -126,6 +147,7 @@ func main() {
 type Config struct {
 	Port           string
 	AlexandriaDSN  string
+	HolocronDSN    string
 	CORSOrigins    []string
 }
 
@@ -134,6 +156,7 @@ func loadConfig() Config {
 	return Config{
 		Port:          getEnv("API_GATEWAY_PORT", ":8080"),
 		AlexandriaDSN: getEnv("ALEXANDRIA_DSN", "postgres://fortuna_dev:fortuna_dev_password@localhost:5435/alexandria?sslmode=disable"),
+		HolocronDSN:   getEnv("HOLOCRON_DSN", "postgres://fortuna:fortuna_dev_password@localhost:5436/holocron?sslmode=disable"),
 		CORSOrigins:   []string{
 			"http://localhost:3000",
 			"http://localhost:3001",
@@ -149,5 +172,28 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// connectDB opens a direct database connection
+func connectDB(dsn string) (*sql.DB, error) {
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	// Configure connection pool
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
+	// Test connection
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	return db, nil
 }
 
