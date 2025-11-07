@@ -63,3 +63,4 @@ func (r *NormalizerRegistry) Count() int {
 	return len(r.normalizers)
 }
 
+

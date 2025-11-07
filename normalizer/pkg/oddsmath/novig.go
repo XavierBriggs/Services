@@ -177,3 +177,4 @@ func RoundToNearestCent(probability float64) float64 {
 	return math.Round(probability*10000) / 10000
 }
 
+

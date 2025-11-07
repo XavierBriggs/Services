@@ -69,3 +69,4 @@ docker-build: ## Build Docker image
 docker-run: ## Run in Docker
 	@docker run --rm --env-file .env fortuna-normalizer:latest
 
+
