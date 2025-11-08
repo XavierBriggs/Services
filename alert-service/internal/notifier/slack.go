@@ -150,6 +150,52 @@ func (s *SlackNotifier) formatOdds(americanOdds int) string {
 	return fmt.Sprintf("%d", americanOdds)
 }
 
+// SendStartupNotification sends a startup notification to Slack
+func (s *SlackNotifier) SendStartupNotification(ctx context.Context) error {
+	if s.webhookURL == "" {
+		return fmt.Errorf("no webhook URL configured")
+	}
+
+	message := fmt.Sprintf(
+		"🚀 *Fortuna Alert System Active*\n\n" +
+		"✅ Alert service is now monitoring opportunities\n" +
+		"📊 Configured thresholds:\n" +
+		"   • Min Edge: 1.0%%\n" +
+		"   • Max Data Age: 10s\n" +
+		"   • Rate Limit: 10 alerts/min\n\n" +
+		"_Started: %s_",
+		time.Now().Format("2006-01-02 15:04:05 MST"),
+	)
+
+	payload := map[string]interface{}{
+		"text": message,
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Slack payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", s.webhookURL, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send Slack notification: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Slack webhook returned status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 // SendBatchAlerts sends multiple alerts
 func (s *SlackNotifier) SendBatchAlerts(ctx context.Context, opportunities []models.Opportunity) error {
 	for _, opp := range opportunities {

@@ -14,13 +14,15 @@ import (
 
 // OpportunityHandler handles opportunity-related endpoints
 type OpportunityHandler struct {
-	holocronDB *sql.DB
+	holocronDB    *sql.DB
+	alexandriaDB  *sql.DB
 }
 
 // NewOpportunityHandler creates a new opportunity handler
-func NewOpportunityHandler(holocronDB *sql.DB) *OpportunityHandler {
+func NewOpportunityHandler(holocronDB *sql.DB, alexandriaDB *sql.DB) *OpportunityHandler {
 	return &OpportunityHandler{
-		holocronDB: holocronDB,
+		holocronDB:   holocronDB,
+		alexandriaDB: alexandriaDB,
 	}
 }
 
@@ -80,6 +82,8 @@ func (h *OpportunityHandler) GetOpportunities(w http.ResponseWriter, r *http.Req
 	defer rows.Close()
 
 	opportunities := []map[string]interface{}{}
+	eventIDs := []string{}
+	
 	for rows.Next() {
 		var id int64
 		var oppType, sportKey, eventID, marketKey string
@@ -114,6 +118,20 @@ func (h *OpportunityHandler) GetOpportunities(w http.ResponseWriter, r *http.Req
 		opp["legs"] = legs
 
 		opportunities = append(opportunities, opp)
+		eventIDs = append(eventIDs, eventID)
+	}
+	
+	// Fetch event names from Alexandria
+	if len(eventIDs) > 0 {
+		eventMap := h.getEventNames(ctx, eventIDs)
+		for i := range opportunities {
+			eventID := opportunities[i]["event_id"].(string)
+			if eventInfo, exists := eventMap[eventID]; exists {
+				opportunities[i]["home_team"] = eventInfo["home_team"]
+				opportunities[i]["away_team"] = eventInfo["away_team"]
+				opportunities[i]["event_name"] = eventInfo["event_name"]
+			}
+		}
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -240,6 +258,52 @@ func (h *OpportunityHandler) CreateOpportunityAction(w http.ResponseWriter, r *h
 		"operator":     req.Operator,
 		"notes":        req.Notes,
 	})
+}
+
+// getEventNames fetches event names from Alexandria
+func (h *OpportunityHandler) getEventNames(ctx context.Context, eventIDs []string) map[string]map[string]string {
+	if len(eventIDs) == 0 {
+		return make(map[string]map[string]string)
+	}
+
+	// Build IN clause with placeholders
+	placeholders := ""
+	args := make([]interface{}, len(eventIDs))
+	for i, id := range eventIDs {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`
+		SELECT event_id, home_team, away_team
+		FROM events
+		WHERE event_id IN (%s)
+	`, placeholders)
+
+	rows, err := h.alexandriaDB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return make(map[string]map[string]string)
+	}
+	defer rows.Close()
+
+	eventMap := make(map[string]map[string]string)
+	for rows.Next() {
+		var eventID, homeTeam, awayTeam string
+		if err := rows.Scan(&eventID, &homeTeam, &awayTeam); err != nil {
+			continue
+		}
+
+		eventMap[eventID] = map[string]string{
+			"home_team":  homeTeam,
+			"away_team":  awayTeam,
+			"event_name": awayTeam + " @ " + homeTeam,
+		}
+	}
+
+	return eventMap
 }
 
 // getOpportunityLegs retrieves legs for an opportunity

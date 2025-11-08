@@ -96,6 +96,15 @@ func main() {
 
 	fmt.Println("✓ Alert Service started - monitoring opportunities")
 
+	// Send startup notification to Slack
+	if config.SlackWebhookURL != "" {
+		if err := slackNotifier.SendStartupNotification(ctx); err != nil {
+			fmt.Printf("⚠️  Failed to send startup notification: %v\n", err)
+		} else {
+			fmt.Println("✓ Startup notification sent to Slack")
+		}
+	}
+
 	// Wait for shutdown signal or error
 	select {
 	case sig := <-sigChan:

@@ -45,9 +45,17 @@ func main() {
 
 	fmt.Println("✓ Connected to Holocron DB")
 
+	// Connect to Alexandria DB (raw sql.DB for OpportunityHandler)
+	alexandriaDB, err2 := connectDB(config.AlexandriaDSN)
+	if err2 != nil {
+		fmt.Printf("❌ Failed to connect to Alexandria (raw): %v\n", err2)
+		os.Exit(1)
+	}
+	defer alexandriaDB.Close()
+
 	// Initialize handlers
 	handler := handlers.NewHandler(dbClient)
-	opportunityHandler := handlers.NewOpportunityHandler(holocronDB)
+	opportunityHandler := handlers.NewOpportunityHandler(holocronDB, alexandriaDB)
 
 	// Setup router
 	r := chi.NewRouter()
