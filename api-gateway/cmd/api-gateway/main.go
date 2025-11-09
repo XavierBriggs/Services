@@ -53,9 +53,18 @@ func main() {
 	}
 	defer alexandriaDB.Close()
 
+	// Connect to Holocron DB interface for Bet Handler
+	holocronClient, err3 := db.NewHolocronPostgres(config.HolocronDSN)
+	if err3 != nil {
+		fmt.Printf("❌ Failed to connect to Holocron (bet client): %v\n", err3)
+		os.Exit(1)
+	}
+	defer holocronClient.Close()
+
 	// Initialize handlers
 	handler := handlers.NewHandler(dbClient)
 	opportunityHandler := handlers.NewOpportunityHandler(holocronDB, alexandriaDB)
+	betHandler := handlers.NewBetHandler(holocronClient)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -95,6 +104,12 @@ func main() {
 		r.Get("/opportunities", opportunityHandler.GetOpportunities)
 		r.Get("/opportunities/{id}", opportunityHandler.GetOpportunity)
 		r.Post("/opportunities/{id}/actions", opportunityHandler.CreateOpportunityAction)
+
+		// Bets
+		r.Post("/bets", betHandler.CreateBet)
+		r.Get("/bets", betHandler.GetBets)
+		r.Get("/bets/{id}", betHandler.GetBet)
+		r.Get("/bets/summary", betHandler.GetBetSummary)
 	})
 
 	// Start server
@@ -120,6 +135,10 @@ func main() {
 		fmt.Println("    GET  /api/v1/opportunities")
 		fmt.Println("    GET  /api/v1/opportunities/{id}")
 		fmt.Println("    POST /api/v1/opportunities/{id}/actions")
+		fmt.Println("    POST /api/v1/bets")
+		fmt.Println("    GET  /api/v1/bets")
+		fmt.Println("    GET  /api/v1/bets/{id}")
+		fmt.Println("    GET  /api/v1/bets/summary")
 
 		serverErrors <- srv.ListenAndServe()
 	}()
