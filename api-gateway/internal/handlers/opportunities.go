@@ -39,12 +39,14 @@ func (h *OpportunityHandler) GetOpportunities(w http.ResponseWriter, r *http.Req
 	limit := parseIntParam(r, "limit", 50)
 	offset := parseIntParam(r, "offset", 0)
 
-	// Build query
+	// Build query with event filtering to exclude past games
+	// Using dblink to query Alexandria from Holocron
 	query := `
 		SELECT o.id, o.opportunity_type, o.sport_key, o.event_id, o.market_key,
 		       o.edge_pct, o.fair_price, o.detected_at, o.data_age_seconds
 		FROM opportunities o
 		WHERE 1=1
+		  AND o.detected_at > NOW() - INTERVAL '1 hour'
 	`
 	args := []interface{}{}
 	argCount := 1
@@ -121,17 +123,34 @@ func (h *OpportunityHandler) GetOpportunities(w http.ResponseWriter, r *http.Req
 		eventIDs = append(eventIDs, eventID)
 	}
 	
-	// Fetch event names from Alexandria
+	// Fetch event names from Alexandria and filter out past games
 	if len(eventIDs) > 0 {
 		eventMap := h.getEventNames(ctx, eventIDs)
+		filteredOpportunities := []map[string]interface{}{}
+		
 		for i := range opportunities {
 			eventID := opportunities[i]["event_id"].(string)
 			if eventInfo, exists := eventMap[eventID]; exists {
+				// Filter out events that have already started (>15 min grace period for live betting)
+				commenceTime := eventInfo["commence_time"].(time.Time)
+				eventStatus := eventInfo["event_status"].(string)
+				
+				// Skip if event has started more than 15 minutes ago OR status is not upcoming
+				if eventStatus != "upcoming" || time.Since(commenceTime) > 15*time.Minute {
+					continue
+				}
+				
 				opportunities[i]["home_team"] = eventInfo["home_team"]
 				opportunities[i]["away_team"] = eventInfo["away_team"]
 				opportunities[i]["event_name"] = eventInfo["event_name"]
+				opportunities[i]["commence_time"] = commenceTime
+				opportunities[i]["event_status"] = eventStatus
+				
+				filteredOpportunities = append(filteredOpportunities, opportunities[i])
 			}
 		}
+		
+		opportunities = filteredOpportunities
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -260,10 +279,10 @@ func (h *OpportunityHandler) CreateOpportunityAction(w http.ResponseWriter, r *h
 	})
 }
 
-// getEventNames fetches event names from Alexandria
-func (h *OpportunityHandler) getEventNames(ctx context.Context, eventIDs []string) map[string]map[string]string {
+// getEventNames fetches event names and metadata from Alexandria
+func (h *OpportunityHandler) getEventNames(ctx context.Context, eventIDs []string) map[string]map[string]interface{} {
 	if len(eventIDs) == 0 {
-		return make(map[string]map[string]string)
+		return make(map[string]map[string]interface{})
 	}
 
 	// Build IN clause with placeholders
@@ -278,28 +297,31 @@ func (h *OpportunityHandler) getEventNames(ctx context.Context, eventIDs []strin
 	}
 
 	query := fmt.Sprintf(`
-		SELECT event_id, home_team, away_team
+		SELECT event_id, home_team, away_team, commence_time, event_status
 		FROM events
 		WHERE event_id IN (%s)
 	`, placeholders)
 
 	rows, err := h.alexandriaDB.QueryContext(ctx, query, args...)
 	if err != nil {
-		return make(map[string]map[string]string)
+		return make(map[string]map[string]interface{})
 	}
 	defer rows.Close()
 
-	eventMap := make(map[string]map[string]string)
+	eventMap := make(map[string]map[string]interface{})
 	for rows.Next() {
-		var eventID, homeTeam, awayTeam string
-		if err := rows.Scan(&eventID, &homeTeam, &awayTeam); err != nil {
+		var eventID, homeTeam, awayTeam, eventStatus string
+		var commenceTime time.Time
+		if err := rows.Scan(&eventID, &homeTeam, &awayTeam, &commenceTime, &eventStatus); err != nil {
 			continue
 		}
 
-		eventMap[eventID] = map[string]string{
-			"home_team":  homeTeam,
-			"away_team":  awayTeam,
-			"event_name": awayTeam + " @ " + homeTeam,
+		eventMap[eventID] = map[string]interface{}{
+			"home_team":     homeTeam,
+			"away_team":     awayTeam,
+			"event_name":    awayTeam + " @ " + homeTeam,
+			"commence_time": commenceTime,
+			"event_status":  eventStatus,
 		}
 	}
 
