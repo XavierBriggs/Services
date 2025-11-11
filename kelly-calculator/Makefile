@@ -27,3 +27,4 @@ docker-run:
 		-e KELLY_DEFAULT_FRACTION=0.25 \
 		kelly-calculator:latest
 
+

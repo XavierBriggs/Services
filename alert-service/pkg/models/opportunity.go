@@ -25,3 +25,4 @@ type OpportunityLeg struct {
 	LegEdgePercent *float64 `json:"leg_edge_pct,omitempty"`
 }
 
+

@@ -51,3 +51,4 @@ type LegRecommendation struct {
 	Explanation      string   `json:"explanation"`
 }
 
+

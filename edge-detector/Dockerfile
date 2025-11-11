@@ -32,3 +32,4 @@ EXPOSE 9093
 # Run the binary
 CMD ["./edge-detector"]
 
+

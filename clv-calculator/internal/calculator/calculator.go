@@ -218,3 +218,4 @@ func americanToDecimal(american int) float64 {
 	return (100.0 / float64(-american)) + 1.0
 }
 
+

@@ -77,3 +77,4 @@ func CalculateScalpStakes(opportunity models.Opportunity, totalStake float64) (*
 	}, nil
 }
 
+

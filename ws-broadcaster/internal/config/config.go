@@ -11,6 +11,9 @@ type StreamConfig struct {
 	// Sport-specific normalized odds streams (e.g., odds.normalized.basketball_nba)
 	NormalizedOddsStreams []string
 
+	// Sport-specific game updates streams (e.g., games.updates.basketball_nba)
+	GameUpdatesStreams []string
+
 	// Opportunities stream (sport-agnostic)
 	OpportunitiesStream string
 
@@ -58,18 +61,20 @@ func loadStreamConfig() StreamConfig {
 	sportsStr := getEnv("SPORTS", "basketball_nba")
 	sports := strings.Split(sportsStr, ",")
 
-	// Build normalized odds streams for each sport
+	// Build normalized odds streams and game updates streams for each sport
 	normalizedStreams := make([]string, 0, len(sports))
+	gameStreams := make([]string, 0, len(sports))
 	for _, sport := range sports {
 		sport = strings.TrimSpace(sport)
 		if sport != "" {
-			streamName := fmt.Sprintf("odds.normalized.%s", sport)
-			normalizedStreams = append(normalizedStreams, streamName)
+			normalizedStreams = append(normalizedStreams, fmt.Sprintf("odds.normalized.%s", sport))
+			gameStreams = append(gameStreams, fmt.Sprintf("games.updates.%s", sport))
 		}
 	}
 
 	return StreamConfig{
 		NormalizedOddsStreams: normalizedStreams,
+		GameUpdatesStreams:    gameStreams,
 		OpportunitiesStream:   "opportunities.detected",
 		ConsumerGroup:         getEnv("CONSUMER_GROUP", "ws-broadcaster"),
 		ConsumerID:            getEnv("CONSUMER_ID", "broadcaster-1"),
@@ -86,8 +91,9 @@ func getEnv(key, defaultValue string) string {
 
 // GetAllStreams returns all streams to consume from
 func (sc *StreamConfig) GetAllStreams() []string {
-	streams := make([]string, 0, len(sc.NormalizedOddsStreams)+1)
+	streams := make([]string, 0, len(sc.NormalizedOddsStreams)+len(sc.GameUpdatesStreams)+1)
 	streams = append(streams, sc.NormalizedOddsStreams...)
+	streams = append(streams, sc.GameUpdatesStreams...)
 	streams = append(streams, sc.OpportunitiesStream)
 	return streams
 }

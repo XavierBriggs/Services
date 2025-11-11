@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/XavierBriggs/fortuna/services/ws-broadcaster/internal/config"
@@ -117,11 +118,31 @@ func (sc *StreamConsumer) processMessage(ctx context.Context, stream string, msg
 		return
 	}
 
-	// Parse odds update
+	// Route based on stream type
+	if strings.HasPrefix(stream, "games.updates.") {
+		sc.processGameUpdate(ctx, stream, dataStr, msg.ID)
+	} else if strings.HasPrefix(stream, "odds.normalized.") {
+		sc.processOddsUpdate(ctx, stream, dataStr, msg.ID)
+	} else {
+		// Handle other stream types (opportunities, etc.)
+		var oddsUpdate models.OddsUpdate
+		if err := json.Unmarshal([]byte(dataStr), &oddsUpdate); err != nil {
+			fmt.Printf("⚠️  Failed to parse update from %s: %v\n", stream, err)
+			sc.ackMessage(ctx, stream, msg.ID)
+			return
+		}
+
+		sc.hub.Broadcast(oddsUpdate)
+		sc.ackMessage(ctx, stream, msg.ID)
+	}
+}
+
+// processOddsUpdate processes odds update messages
+func (sc *StreamConsumer) processOddsUpdate(ctx context.Context, stream string, dataStr string, messageID string) {
 	var oddsUpdate models.OddsUpdate
 	if err := json.Unmarshal([]byte(dataStr), &oddsUpdate); err != nil {
 		fmt.Printf("⚠️  Failed to parse odds update from %s: %v\n", stream, err)
-		sc.ackMessage(ctx, stream, msg.ID)
+		sc.ackMessage(ctx, stream, messageID)
 		return
 	}
 
@@ -132,7 +153,30 @@ func (sc *StreamConsumer) processMessage(ctx context.Context, stream string, msg
 	sc.hub.Broadcast(oddsUpdate)
 
 	// Acknowledge message
-	sc.ackMessage(ctx, stream, msg.ID)
+	sc.ackMessage(ctx, stream, messageID)
+}
+
+// processGameUpdate processes game update messages
+func (sc *StreamConsumer) processGameUpdate(ctx context.Context, stream string, dataStr string, messageID string) {
+	// Parse as generic map for game updates
+	var gameUpdate map[string]interface{}
+	if err := json.Unmarshal([]byte(dataStr), &gameUpdate); err != nil {
+		fmt.Printf("⚠️  Failed to parse game update from %s: %v\n", stream, err)
+		sc.ackMessage(ctx, stream, messageID)
+		return
+	}
+
+	// Add type field for frontend to distinguish message types
+	gameUpdate["message_type"] = "game_update"
+
+	fmt.Printf("📤 Broadcasting game: game_id=%s status=%s\n", 
+		gameUpdate["game_id"], gameUpdate["status"])
+
+	// Broadcast to connected clients
+	sc.hub.Broadcast(gameUpdate)
+
+	// Acknowledge message
+	sc.ackMessage(ctx, stream, messageID)
 }
 
 // ackMessage acknowledges a message in the stream

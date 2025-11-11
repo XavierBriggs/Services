@@ -52,3 +52,4 @@ type DetectorConfig interface {
 	IsPlayerPropsEnabled() bool
 }
 
+

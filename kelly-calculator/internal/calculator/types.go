@@ -29,3 +29,4 @@ func calculateImpliedProbability(american int) float64 {
 	return 1.0 / decimal
 }
 
+

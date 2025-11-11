@@ -52,3 +52,4 @@ VALUES
 -- Comments
 COMMENT ON DATABASE holocron IS 'Fortuna betting opportunities and bet tracking database';
 
+

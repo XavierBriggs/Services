@@ -70,3 +70,4 @@ docker-run: ## Run in Docker
 	@docker run --rm --env-file .env -p 8080:8080 fortuna-api-gateway:latest
 
 
+

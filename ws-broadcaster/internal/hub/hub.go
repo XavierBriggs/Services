@@ -17,7 +17,7 @@ type Hub struct {
 	clientsMu sync.RWMutex
 
 	// Inbound messages from stream consumer
-	broadcast chan models.OddsUpdate
+	broadcast chan any
 
 	// Register requests from clients
 	register chan *client.Client
@@ -35,7 +35,7 @@ type Hub struct {
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*client.Client]bool),
-		broadcast:  make(chan models.OddsUpdate, 1000),
+		broadcast:  make(chan any, 1000),
 		register:   make(chan *client.Client),
 		unregister: make(chan *client.Client),
 	}
@@ -77,7 +77,7 @@ func (h *Hub) Unregister(client *client.Client) {
 }
 
 // Broadcast sends an odds update to all matching clients
-func (h *Hub) Broadcast(update models.OddsUpdate) {
+func (h *Hub) Broadcast(update any) {
 	select {
 	case h.broadcast <- update:
 	default:
@@ -110,7 +110,7 @@ func (h *Hub) unregisterClient(c *client.Client) {
 }
 
 // broadcastUpdate sends an update to all clients that match the filter
-func (h *Hub) broadcastUpdate(update models.OddsUpdate) {
+func (h *Hub) broadcastUpdate(update any) {
 	h.clientsMu.RLock()
 	clients := make([]*client.Client, 0, len(h.clients))
 	for c := range h.clients {
@@ -118,8 +118,16 @@ func (h *Hub) broadcastUpdate(update models.OddsUpdate) {
 	}
 	h.clientsMu.RUnlock()
 
+	// Determine message type based on payload
+	messageType := models.MessageTypeOddsUpdate
+	if m, ok := update.(map[string]interface{}); ok {
+		if msgType, exists := m["message_type"]; exists && msgType == "game_update" {
+			messageType = "game_update"
+		}
+	}
+
 	message := models.ServerMessage{
-		Type:      models.MessageTypeOddsUpdate,
+		Type:      messageType,
 		Payload:   update,
 		Timestamp: time.Now(),
 	}
@@ -128,10 +136,13 @@ func (h *Hub) broadcastUpdate(update models.OddsUpdate) {
 	dropped := 0
 
 	for _, c := range clients {
-		// Check if client's filter matches this update
-		if !c.MatchesFilter(update) {
-			continue
+		// Check if client's filter matches this update (only for odds updates)
+		if oddsUpdate, ok := update.(models.OddsUpdate); ok {
+			if !c.MatchesFilter(oddsUpdate) {
+				continue
+			}
 		}
+		// Game updates are sent to all clients (no filtering)
 
 		// Try to send (non-blocking)
 		if c.TrySend(message) {

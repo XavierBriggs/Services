@@ -98,3 +98,4 @@ func CalculateMiddleKelly(opportunity models.Opportunity, bankroll, kellyFractio
 	}, nil
 }
 
+

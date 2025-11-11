@@ -122,3 +122,4 @@ func (c *StreamConsumer) AckMessage(ctx context.Context, streamKey, messageID st
 	return c.client.XAck(ctx, streamKey, c.groupName, messageID).Err()
 }
 
+

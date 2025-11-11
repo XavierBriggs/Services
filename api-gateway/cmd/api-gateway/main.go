@@ -17,6 +17,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -45,6 +46,23 @@ func main() {
 
 	fmt.Println("✓ Connected to Holocron DB")
 
+	// Connect to Redis for games data
+	redisOpts, err4 := redis.ParseURL(config.RedisURL)
+	if err4 != nil {
+		fmt.Printf("❌ Failed to parse Redis URL: %v\n", err4)
+		os.Exit(1)
+	}
+	redisClient := redis.NewClient(redisOpts)
+	defer redisClient.Close()
+
+	// Test Redis connection
+	ctx := context.Background()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		fmt.Printf("❌ Failed to connect to Redis: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("✓ Connected to Redis")
+
 	// Connect to Alexandria DB (raw sql.DB for OpportunityHandler)
 	alexandriaDB, err2 := connectDB(config.AlexandriaDSN)
 	if err2 != nil {
@@ -65,6 +83,7 @@ func main() {
 	handler := handlers.NewHandler(dbClient)
 	opportunityHandler := handlers.NewOpportunityHandler(holocronDB, alexandriaDB)
 	betHandler := handlers.NewBetHandler(holocronClient)
+	gamesHandler := handlers.NewGamesHandler(redisClient)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -110,6 +129,13 @@ func main() {
 		r.Get("/bets", betHandler.GetBets)
 		r.Get("/bets/{id}", betHandler.GetBet)
 		r.Get("/bets/summary", betHandler.GetBetSummary)
+
+		// Games (live scores and box scores)
+		r.Get("/games/today", gamesHandler.HandleGetTodaysGames)
+		r.Get("/games/{game_id}", gamesHandler.HandleGetGame)
+		r.Get("/games/{game_id}/boxscore", gamesHandler.HandleGetBoxScore)
+		r.Get("/games/{game_id}/linked-odds", gamesHandler.HandleGetLinkedOdds)
+		r.Get("/sports/enabled", gamesHandler.HandleGetEnabledSports)
 	})
 
 	// Start server
@@ -139,6 +165,11 @@ func main() {
 		fmt.Println("    GET  /api/v1/bets")
 		fmt.Println("    GET  /api/v1/bets/{id}")
 		fmt.Println("    GET  /api/v1/bets/summary")
+		fmt.Println("    GET  /api/v1/games/today")
+		fmt.Println("    GET  /api/v1/games/{game_id}")
+		fmt.Println("    GET  /api/v1/games/{game_id}/boxscore")
+		fmt.Println("    GET  /api/v1/games/{game_id}/linked-odds")
+		fmt.Println("    GET  /api/v1/sports/enabled")
 
 		serverErrors <- srv.ListenAndServe()
 	}()
@@ -175,6 +206,7 @@ type Config struct {
 	Port           string
 	AlexandriaDSN  string
 	HolocronDSN    string
+	RedisURL       string
 	CORSOrigins    []string
 }
 
@@ -184,6 +216,7 @@ func loadConfig() Config {
 		Port:          getEnv("API_GATEWAY_PORT", ":8080"),
 		AlexandriaDSN: getEnv("ALEXANDRIA_DSN", "postgres://fortuna_dev:fortuna_dev_password@localhost:5435/alexandria?sslmode=disable"),
 		HolocronDSN:   getEnv("HOLOCRON_DSN", "postgres://fortuna:fortuna_dev_password@localhost:5436/holocron?sslmode=disable"),
+		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6380"),
 		CORSOrigins:   []string{
 			"http://localhost:3000",
 			"http://localhost:3001",
