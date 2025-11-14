@@ -121,6 +121,12 @@ func (sc *StreamConsumer) processMessage(ctx context.Context, stream string, msg
 	// Route based on stream type
 	if strings.HasPrefix(stream, "games.updates.") {
 		sc.processGameUpdate(ctx, stream, dataStr, msg.ID)
+	} else if strings.HasPrefix(stream, "games.live.") {
+		// Minerva live game updates
+		sc.processMinervaLiveGame(ctx, stream, dataStr, msg.ID)
+	} else if strings.HasPrefix(stream, "games.stats.") {
+		// Minerva final game stats
+		sc.processMinervaGameStats(ctx, stream, dataStr, msg.ID)
 	} else if strings.HasPrefix(stream, "odds.normalized.") {
 		sc.processOddsUpdate(ctx, stream, dataStr, msg.ID)
 	} else {
@@ -174,6 +180,54 @@ func (sc *StreamConsumer) processGameUpdate(ctx context.Context, stream string, 
 
 	// Broadcast to connected clients
 	sc.hub.Broadcast(gameUpdate)
+
+	// Acknowledge message
+	sc.ackMessage(ctx, stream, messageID)
+}
+
+// processMinervaLiveGame processes live game updates from Minerva
+func (sc *StreamConsumer) processMinervaLiveGame(ctx context.Context, stream string, dataStr string, messageID string) {
+	// Parse as generic map for Minerva game data
+	var liveGame map[string]interface{}
+	if err := json.Unmarshal([]byte(dataStr), &liveGame); err != nil {
+		fmt.Printf("⚠️  Failed to parse Minerva live game from %s: %v\n", stream, err)
+		sc.ackMessage(ctx, stream, messageID)
+		return
+	}
+
+	// Add type field for frontend to distinguish message types
+	liveGame["message_type"] = "minerva_live_game"
+	liveGame["source"] = "minerva"
+
+	fmt.Printf("📤 Broadcasting Minerva live game: game_id=%s status=%s\n", 
+		liveGame["game_id"], liveGame["game_status"])
+
+	// Broadcast to connected clients
+	sc.hub.Broadcast(liveGame)
+
+	// Acknowledge message
+	sc.ackMessage(ctx, stream, messageID)
+}
+
+// processMinervaGameStats processes final game stats from Minerva
+func (sc *StreamConsumer) processMinervaGameStats(ctx context.Context, stream string, dataStr string, messageID string) {
+	// Parse as generic map for Minerva stats data
+	var gameStats map[string]interface{}
+	if err := json.Unmarshal([]byte(dataStr), &gameStats); err != nil {
+		fmt.Printf("⚠️  Failed to parse Minerva game stats from %s: %v\n", stream, err)
+		sc.ackMessage(ctx, stream, messageID)
+		return
+	}
+
+	// Add type field for frontend to distinguish message types
+	gameStats["message_type"] = "minerva_game_stats"
+	gameStats["source"] = "minerva"
+
+	fmt.Printf("📤 Broadcasting Minerva final stats: game_id=%s\n", 
+		gameStats["game_id"])
+
+	// Broadcast to connected clients
+	sc.hub.Broadcast(gameStats)
 
 	// Acknowledge message
 	sc.ackMessage(ctx, stream, messageID)

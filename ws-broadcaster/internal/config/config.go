@@ -14,6 +14,12 @@ type StreamConfig struct {
 	// Sport-specific game updates streams (e.g., games.updates.basketball_nba)
 	GameUpdatesStreams []string
 
+	// Minerva live game streams (e.g., games.live.basketball_nba)
+	LiveGameStreams []string
+
+	// Minerva final stats streams (e.g., games.stats.basketball_nba)
+	GameStatsStreams []string
+
 	// Opportunities stream (sport-agnostic)
 	OpportunitiesStream string
 
@@ -61,20 +67,29 @@ func loadStreamConfig() StreamConfig {
 	sportsStr := getEnv("SPORTS", "basketball_nba")
 	sports := strings.Split(sportsStr, ",")
 
-	// Build normalized odds streams and game updates streams for each sport
+	// Build normalized odds streams, game updates streams, and Minerva streams for each sport
 	normalizedStreams := make([]string, 0, len(sports))
 	gameStreams := make([]string, 0, len(sports))
+	liveGameStreams := make([]string, 0, len(sports))
+	gameStatsStreams := make([]string, 0, len(sports))
+	
 	for _, sport := range sports {
 		sport = strings.TrimSpace(sport)
 		if sport != "" {
 			normalizedStreams = append(normalizedStreams, fmt.Sprintf("odds.normalized.%s", sport))
 			gameStreams = append(gameStreams, fmt.Sprintf("games.updates.%s", sport))
+			
+			// Minerva streams
+			liveGameStreams = append(liveGameStreams, fmt.Sprintf("games.live.%s", sport))
+			gameStatsStreams = append(gameStatsStreams, fmt.Sprintf("games.stats.%s", sport))
 		}
 	}
 
 	return StreamConfig{
 		NormalizedOddsStreams: normalizedStreams,
 		GameUpdatesStreams:    gameStreams,
+		LiveGameStreams:       liveGameStreams,
+		GameStatsStreams:      gameStatsStreams,
 		OpportunitiesStream:   "opportunities.detected",
 		ConsumerGroup:         getEnv("CONSUMER_GROUP", "ws-broadcaster"),
 		ConsumerID:            getEnv("CONSUMER_ID", "broadcaster-1"),
@@ -91,9 +106,11 @@ func getEnv(key, defaultValue string) string {
 
 // GetAllStreams returns all streams to consume from
 func (sc *StreamConfig) GetAllStreams() []string {
-	streams := make([]string, 0, len(sc.NormalizedOddsStreams)+len(sc.GameUpdatesStreams)+1)
+	streams := make([]string, 0, len(sc.NormalizedOddsStreams)+len(sc.GameUpdatesStreams)+len(sc.LiveGameStreams)+len(sc.GameStatsStreams)+1)
 	streams = append(streams, sc.NormalizedOddsStreams...)
 	streams = append(streams, sc.GameUpdatesStreams...)
+	streams = append(streams, sc.LiveGameStreams...)
+	streams = append(streams, sc.GameStatsStreams...)
 	streams = append(streams, sc.OpportunitiesStream)
 	return streams
 }
