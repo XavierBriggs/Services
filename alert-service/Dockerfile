@@ -26,3 +26,4 @@ EXPOSE 9094
 CMD ["./alert-service"]
 
 
+

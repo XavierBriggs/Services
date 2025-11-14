@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -13,9 +14,12 @@ import (
 type HolocronDB interface {
 	Ping(ctx context.Context) error
 	CreateBet(ctx context.Context, bet *models.Bet) (int64, error)
+	CreateBetAndUpdateBankroll(ctx context.Context, bet *models.Bet, userID string) (*models.BetCreationResult, error)
 	GetBets(ctx context.Context, filters models.BetFilters) ([]*models.BetWithPerformance, error)
 	GetBetByID(ctx context.Context, id int64) (*models.BetWithPerformance, error)
 	GetBetSummary(ctx context.Context) (*models.BetSummary, error)
+	GetUserSettings(ctx context.Context, userID string) (*models.UserSettings, error)
+	UpdateUserSettings(ctx context.Context, userID string, update *models.UserSettingsUpdate) error
 }
 
 // HolocronPostgres implements HolocronDB for PostgreSQL
@@ -76,6 +80,102 @@ func (h *HolocronPostgres) CreateBet(ctx context.Context, bet *models.Bet) (int6
 	}
 
 	return betID, nil
+}
+
+// CreateBetAndUpdateBankroll atomically creates a bet and updates the user's bankroll
+func (h *HolocronPostgres) CreateBetAndUpdateBankroll(ctx context.Context, bet *models.Bet, userID string) (*models.BetCreationResult, error) {
+	// Start transaction with serializable isolation
+	tx, err := h.db.BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// 1. Lock and get current bankrolls
+	var bankrollsJSON []byte
+	err = tx.QueryRowContext(ctx,
+		`SELECT bankrolls FROM user_settings WHERE user_id = $1 FOR UPDATE`,
+		userID,
+	).Scan(&bankrollsJSON)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("user settings not found for user_id: %s", userID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get bankrolls: %w", err)
+	}
+
+	var bankrolls map[string]float64
+	if err := json.Unmarshal(bankrollsJSON, &bankrolls); err != nil {
+		return nil, fmt.Errorf("parse bankrolls JSON: %w", err)
+	}
+
+	previousBankroll, exists := bankrolls[bet.BookKey]
+	if !exists {
+		previousBankroll = 0
+	}
+
+	// 2. Validate sufficient bankroll
+	if previousBankroll < bet.StakeAmount {
+		return nil, fmt.Errorf(
+			"insufficient bankroll for %s: have $%.2f, need $%.2f",
+			bet.BookKey, previousBankroll, bet.StakeAmount,
+		)
+	}
+
+	// 3. Insert bet
+	var betID int64
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO bets (
+			opportunity_id, sport_key, event_id, market_key, book_key,
+			outcome_name, bet_type, stake_amount, bet_price, point,
+			placed_at, result
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING id`,
+		bet.OpportunityID, bet.SportKey, bet.EventID, bet.MarketKey, bet.BookKey,
+		bet.OutcomeName, bet.BetType, bet.StakeAmount, bet.BetPrice, bet.Point,
+		bet.PlacedAt, "pending",
+	).Scan(&betID)
+
+	if err != nil {
+		return nil, fmt.Errorf("insert bet: %w", err)
+	}
+
+	// 4. Update bankroll
+	newBankroll := previousBankroll - bet.StakeAmount
+	bankrolls[bet.BookKey] = newBankroll
+
+	updatedBankrollsJSON, err := json.Marshal(bankrolls)
+	if err != nil {
+		return nil, fmt.Errorf("marshal updated bankrolls: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`UPDATE user_settings 
+		 SET bankrolls = $1, updated_at = NOW()
+		 WHERE user_id = $2`,
+		updatedBankrollsJSON, userID,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("update bankrolls: %w", err)
+	}
+
+	// 5. Commit transaction
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return &models.BetCreationResult{
+		BetID:            betID,
+		Status:           "created",
+		UpdatedBankrolls: bankrolls,
+		PreviousBankroll: previousBankroll,
+		NewBankroll:      newBankroll,
+		BankrollChange:   bet.StakeAmount,
+	}, nil
 }
 
 // GetBets retrieves bets with optional filters
@@ -332,6 +432,83 @@ func (h *HolocronPostgres) getSummaryByBook(ctx context.Context) (map[string]mod
 	}
 
 	return result, nil
+}
+
+// GetUserSettings retrieves user settings
+func (h *HolocronPostgres) GetUserSettings(ctx context.Context, userID string) (*models.UserSettings, error) {
+	query := `
+		SELECT 
+			id, user_id, bankrolls, kelly_fraction, min_edge_threshold, max_stake_pct,
+			created_at, updated_at
+		FROM user_settings
+		WHERE user_id = $1
+	`
+
+	settings := &models.UserSettings{
+		Bankrolls: make(map[string]float64),
+	}
+
+	var bankrollsJSON []byte
+	err := h.db.QueryRowContext(ctx, query, userID).Scan(
+		&settings.ID,
+		&settings.UserID,
+		&bankrollsJSON,
+		&settings.KellyFraction,
+		&settings.MinEdgeThreshold,
+		&settings.MaxStakePct,
+		&settings.CreatedAt,
+		&settings.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("query user settings: %w", err)
+	}
+
+	// Parse JSON bankrolls
+	if err := json.Unmarshal(bankrollsJSON, &settings.Bankrolls); err != nil {
+		return nil, fmt.Errorf("parse bankrolls JSON: %w", err)
+	}
+
+	return settings, nil
+}
+
+// UpdateUserSettings updates user settings
+func (h *HolocronPostgres) UpdateUserSettings(ctx context.Context, userID string, update *models.UserSettingsUpdate) error {
+	// Convert bankrolls map to JSON
+	bankrollsJSON, err := json.Marshal(update.Bankrolls)
+	if err != nil {
+		return fmt.Errorf("marshal bankrolls: %w", err)
+	}
+
+	query := `
+		INSERT INTO user_settings (user_id, bankrolls, kelly_fraction, min_edge_threshold, max_stake_pct)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (user_id) DO UPDATE SET
+			bankrolls = EXCLUDED.bankrolls,
+			kelly_fraction = EXCLUDED.kelly_fraction,
+			min_edge_threshold = EXCLUDED.min_edge_threshold,
+			max_stake_pct = EXCLUDED.max_stake_pct,
+			updated_at = NOW()
+	`
+
+	_, err = h.db.ExecContext(
+		ctx, query,
+		userID,
+		bankrollsJSON,
+		update.KellyFraction,
+		update.MinEdgeThreshold,
+		update.MaxStakePct,
+	)
+
+	if err != nil {
+		return fmt.Errorf("update user settings: %w", err)
+	}
+
+	return nil
 }
 
 // Close closes the database connection

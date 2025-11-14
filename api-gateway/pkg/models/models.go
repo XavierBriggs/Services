@@ -73,3 +73,33 @@ type BookSummary struct {
 	WinRate   float64 `json:"win_rate_pct"`
 }
 
+// UserSettings represents user configuration for bankroll and Kelly sizing
+type UserSettings struct {
+	ID               int64              `json:"id"`
+	UserID           string             `json:"user_id"`
+	Bankrolls        map[string]float64 `json:"bankrolls"`         // Per-book bankrolls
+	KellyFraction    float64            `json:"kelly_fraction"`    // 0.25 = 1/4 Kelly
+	MinEdgeThreshold float64            `json:"min_edge_threshold"`
+	MaxStakePct      float64            `json:"max_stake_pct"`
+	CreatedAt        time.Time          `json:"created_at"`
+	UpdatedAt        time.Time          `json:"updated_at"`
+}
+
+// UserSettingsUpdate represents a settings update request
+type UserSettingsUpdate struct {
+	Bankrolls        map[string]float64 `json:"bankrolls"`
+	KellyFraction    float64            `json:"kelly_fraction"`
+	MinEdgeThreshold float64            `json:"min_edge_threshold"`
+	MaxStakePct      float64            `json:"max_stake_pct"`
+}
+
+// BetCreationResult represents the response from creating a bet with bankroll update
+type BetCreationResult struct {
+	BetID            int64              `json:"bet_id"`
+	Status           string             `json:"status"`
+	UpdatedBankrolls map[string]float64 `json:"updated_bankrolls"`
+	PreviousBankroll float64            `json:"previous_bankroll"`
+	NewBankroll      float64            `json:"new_bankroll"`
+	BankrollChange   float64            `json:"bankroll_change"`
+}
+

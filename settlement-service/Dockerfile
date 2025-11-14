@@ -26,3 +26,4 @@ COPY --from=builder /settlement-service .
 CMD ["./settlement-service"]
 
 
+

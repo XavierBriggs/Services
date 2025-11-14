@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/XavierBriggs/fortuna/services/api-gateway/internal/db"
@@ -24,9 +25,9 @@ func NewBetHandler(holocronDB db.HolocronDB) *BetHandler {
 	}
 }
 
-// CreateBet creates a new bet entry
+// CreateBet creates a new bet entry and updates the user's bankroll atomically
 func (h *BetHandler) CreateBet(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
 	// Parse request body
@@ -58,18 +59,26 @@ func (h *BetHandler) CreateBet(w http.ResponseWriter, r *http.Request) {
 		bet.PlacedAt = time.Now()
 	}
 
-	// Insert bet
-	betID, err := h.holocronDB.CreateBet(ctx, &bet)
+	// Get user ID (currently hardcoded, future: from auth middleware)
+	userID := "default"
+
+	// Create bet and update bankroll atomically
+	result, err := h.holocronDB.CreateBetAndUpdateBankroll(ctx, &bet, userID)
 	if err != nil {
+		// Check for specific error types
+		if strings.Contains(err.Error(), "insufficient bankroll") {
+			respondError(w, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+		if strings.Contains(err.Error(), "user settings not found") {
+			respondError(w, http.StatusNotFound, "user settings not configured", err)
+			return
+		}
 		respondError(w, http.StatusInternalServerError, "failed to create bet", err)
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"bet_id":                       betID,
-		"status":                       "created",
-		"clv_will_calculate_on_event_start": true,
-	})
+	respondJSON(w, http.StatusCreated, result)
 }
 
 // GetBets retrieves bets with optional filters

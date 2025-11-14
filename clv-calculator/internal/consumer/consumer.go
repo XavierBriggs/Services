@@ -104,3 +104,4 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) e
 }
 
 
+

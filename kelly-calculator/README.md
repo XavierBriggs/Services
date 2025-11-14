@@ -198,3 +198,4 @@ This service is designed to be called from the opportunities page when the "Bet"
 See `web/fortuna_client/components/bet/QuickBetModal.tsx` for frontend integration.
 
 
+

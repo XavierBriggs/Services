@@ -83,6 +83,7 @@ func main() {
 	handler := handlers.NewHandler(dbClient)
 	opportunityHandler := handlers.NewOpportunityHandler(holocronDB, alexandriaDB)
 	betHandler := handlers.NewBetHandler(holocronClient)
+	settingsHandler := handlers.NewSettingsHandler(holocronClient)
 	gamesHandler := handlers.NewGamesHandler(redisClient)
 
 	// Setup router
@@ -130,6 +131,10 @@ func main() {
 		r.Get("/bets/{id}", betHandler.GetBet)
 		r.Get("/bets/summary", betHandler.GetBetSummary)
 
+		// Settings
+		r.Get("/settings", settingsHandler.GetSettings)
+		r.Put("/settings", settingsHandler.UpdateSettings)
+
 		// Games (live scores and box scores)
 		r.Get("/games/today", gamesHandler.HandleGetTodaysGames)
 		r.Get("/games/{game_id}", gamesHandler.HandleGetGame)
@@ -165,6 +170,8 @@ func main() {
 		fmt.Println("    GET  /api/v1/bets")
 		fmt.Println("    GET  /api/v1/bets/{id}")
 		fmt.Println("    GET  /api/v1/bets/summary")
+		fmt.Println("    GET  /api/v1/settings")
+		fmt.Println("    PUT  /api/v1/settings")
 		fmt.Println("    GET  /api/v1/games/today")
 		fmt.Println("    GET  /api/v1/games/{game_id}")
 		fmt.Println("    GET  /api/v1/games/{game_id}/boxscore")

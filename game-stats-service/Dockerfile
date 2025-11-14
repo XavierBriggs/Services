@@ -23,3 +23,4 @@ COPY --from=builder /app/game-stats-service .
 CMD ["./game-stats-service"]
 
 
+
