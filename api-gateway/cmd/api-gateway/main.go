@@ -85,6 +85,7 @@ func main() {
 	betHandler := handlers.NewBetHandler(holocronClient)
 	settingsHandler := handlers.NewSettingsHandler(holocronClient)
 	gamesHandler := handlers.NewGamesHandler(redisClient)
+	minervaHandler := handlers.NewMinervaHandler(config.MinervaURL)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -135,12 +136,37 @@ func main() {
 		r.Get("/settings", settingsHandler.GetSettings)
 		r.Put("/settings", settingsHandler.UpdateSettings)
 
-		// Games (live scores and box scores)
+		// Games (live scores and box scores from game-stats-service)
 		r.Get("/games/today", gamesHandler.HandleGetTodaysGames)
 		r.Get("/games/{game_id}", gamesHandler.HandleGetGame)
 		r.Get("/games/{game_id}/boxscore", gamesHandler.HandleGetBoxScore)
 		r.Get("/games/{game_id}/linked-odds", gamesHandler.HandleGetLinkedOdds)
 		r.Get("/sports/enabled", gamesHandler.HandleGetEnabledSports)
+
+		// Minerva - Sports Analytics Service
+		r.Route("/minerva", func(r chi.Router) {
+			// Health check
+			r.Get("/health", minervaHandler.HealthCheck)
+
+			// Games
+			r.Get("/games/live", minervaHandler.GetLiveGames)
+			r.Get("/games/upcoming", minervaHandler.GetUpcomingGames)
+			r.Get("/games", minervaHandler.GetGamesByDate)
+			r.Get("/games/{gameID}", minervaHandler.GetGame)
+			r.Get("/games/{gameID}/boxscore", minervaHandler.GetGameBoxScore)
+
+			// Players
+			r.Get("/players/search", minervaHandler.SearchPlayers)
+			r.Get("/players/{playerID}", minervaHandler.GetPlayer)
+			r.Get("/players/{playerID}/stats", minervaHandler.GetPlayerStats)
+			r.Get("/players/{playerID}/averages", minervaHandler.GetPlayerSeasonAverages)
+			r.Get("/players/{playerID}/trend", minervaHandler.GetPlayerTrend)
+			r.Get("/players/{playerID}/ml-features", minervaHandler.GetPlayerMLFeatures)
+
+			// Teams
+			r.Get("/teams/{teamID}/roster", minervaHandler.GetTeamRoster)
+			r.Get("/teams/{teamID}/schedule", minervaHandler.GetTeamSchedule)
+		})
 	})
 
 	// Start server
@@ -214,6 +240,7 @@ type Config struct {
 	AlexandriaDSN  string
 	HolocronDSN    string
 	RedisURL       string
+	MinervaURL     string
 	CORSOrigins    []string
 }
 
@@ -224,6 +251,7 @@ func loadConfig() Config {
 		AlexandriaDSN: getEnv("ALEXANDRIA_DSN", "postgres://fortuna_dev:fortuna_dev_password@localhost:5435/alexandria?sslmode=disable"),
 		HolocronDSN:   getEnv("HOLOCRON_DSN", "postgres://fortuna:fortuna_dev_password@localhost:5436/holocron?sslmode=disable"),
 		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6380"),
+		MinervaURL:    getEnv("MINERVA_URL", "http://localhost:8085"),
 		CORSOrigins:   []string{
 			"http://localhost:3000",
 			"http://localhost:3001",
