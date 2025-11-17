@@ -71,6 +71,15 @@ func main() {
 	}
 	defer alexandriaDB.Close()
 
+	// Connect to Atlas DB (for team short name lookups)
+	atlasDB, err5 := connectDB(config.AtlasDSN)
+	if err5 != nil {
+		fmt.Printf("❌ Failed to connect to Atlas: %v\n", err5)
+		os.Exit(1)
+	}
+	defer atlasDB.Close()
+	fmt.Println("✓ Connected to Atlas DB")
+
 	// Connect to Holocron DB interface for Bet Handler
 	holocronClient, err3 := db.NewHolocronPostgres(config.HolocronDSN)
 	if err3 != nil {
@@ -86,6 +95,7 @@ func main() {
 	settingsHandler := handlers.NewSettingsHandler(holocronClient)
 	gamesHandler := handlers.NewGamesHandler(redisClient)
 	minervaHandler := handlers.NewMinervaHandler(config.MinervaURL)
+	botHandler := handlers.NewBotHandler(config.BotServiceURL, holocronDB, alexandriaDB, atlasDB)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -128,9 +138,15 @@ func main() {
 
 		// Bets
 		r.Post("/bets", betHandler.CreateBet)
+		r.Post("/bets/place-with-bot", botHandler.PlaceBetWithBot)
 		r.Get("/bets", betHandler.GetBets)
 		r.Get("/bets/{id}", betHandler.GetBet)
 		r.Get("/bets/summary", betHandler.GetBetSummary)
+		r.Get("/bets/bot-status", botHandler.GetBotStatus)
+		
+		// Bots
+		r.Get("/bots/status", botHandler.GetBotsStatus)
+		r.Get("/bots/bets/recent", botHandler.GetRecentBets)
 
 		// Settings
 		r.Get("/settings", settingsHandler.GetSettings)
@@ -242,12 +258,14 @@ func main() {
 
 // Config holds application configuration
 type Config struct {
-	Port          string
-	AlexandriaDSN string
-	HolocronDSN   string
-	RedisURL      string
-	MinervaURL    string
-	CORSOrigins   []string
+	Port           string
+	AlexandriaDSN  string
+	HolocronDSN    string
+	AtlasDSN       string
+	RedisURL       string
+	MinervaURL     string
+	BotServiceURL  string
+	CORSOrigins    []string
 }
 
 // loadConfig loads configuration from environment variables
@@ -256,8 +274,10 @@ func loadConfig() Config {
 		Port:          getEnv("API_GATEWAY_PORT", ":8080"),
 		AlexandriaDSN: getEnv("ALEXANDRIA_DSN", "postgres://fortuna_dev:fortuna_dev_password@localhost:5435/alexandria?sslmode=disable"),
 		HolocronDSN:   getEnv("HOLOCRON_DSN", "postgres://fortuna:fortuna_dev_password@localhost:5436/holocron?sslmode=disable"),
+		AtlasDSN:      getEnv("ATLAS_DSN", "postgres://fortuna:fortuna_dev_password@localhost:5434/atlas?sslmode=disable"),
 		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6380"),
 		MinervaURL:    getEnv("MINERVA_URL", "http://localhost:8085"),
+		BotServiceURL: getEnv("BOT_SERVICE_URL", "http://localhost:8090"),
 		CORSOrigins: []string{
 			"http://localhost:3000",
 			"http://localhost:3001",
