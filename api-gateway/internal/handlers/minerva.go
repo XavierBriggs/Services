@@ -61,8 +61,16 @@ func (h *MinervaHandler) proxyToMinerva(w http.ResponseWriter, r *http.Request, 
 	}
 	defer resp.Body.Close()
 
-	// Copy response headers
+	// Copy response headers (skip CORS headers - handled by middleware)
 	for key, values := range resp.Header {
+		// Skip CORS headers to avoid duplicates
+		if key == "Access-Control-Allow-Origin" ||
+			key == "Access-Control-Allow-Methods" ||
+			key == "Access-Control-Allow-Headers" ||
+			key == "Access-Control-Max-Age" ||
+			key == "Access-Control-Allow-Credentials" {
+			continue
+		}
 		for _, value := range values {
 			w.Header().Add(key, value)
 		}
@@ -144,6 +152,18 @@ func (h *MinervaHandler) GetPlayerMLFeatures(w http.ResponseWriter, r *http.Requ
 	h.proxyToMinerva(w, r, path)
 }
 
+// GetTeams retrieves all teams
+func (h *MinervaHandler) GetTeams(w http.ResponseWriter, r *http.Request) {
+	h.proxyToMinerva(w, r, "/api/v1/teams")
+}
+
+// GetTeam retrieves a specific team by ID
+func (h *MinervaHandler) GetTeam(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "teamID")
+	path := fmt.Sprintf("/api/v1/teams/%s", teamID)
+	h.proxyToMinerva(w, r, path)
+}
+
 // GetTeamRoster retrieves a team's current roster
 func (h *MinervaHandler) GetTeamRoster(w http.ResponseWriter, r *http.Request) {
 	teamID := chi.URLParam(r, "teamID")
@@ -156,6 +176,16 @@ func (h *MinervaHandler) GetTeamSchedule(w http.ResponseWriter, r *http.Request)
 	teamID := chi.URLParam(r, "teamID")
 	path := fmt.Sprintf("/api/v1/teams/%s/schedule", teamID)
 	h.proxyToMinerva(w, r, path)
+}
+
+// StartBackfill triggers a historical ingestion job
+func (h *MinervaHandler) StartBackfill(w http.ResponseWriter, r *http.Request) {
+	h.proxyToMinerva(w, r, "/api/v1/backfill")
+}
+
+// GetBackfillStatus retrieves the status of current and recent jobs
+func (h *MinervaHandler) GetBackfillStatus(w http.ResponseWriter, r *http.Request) {
+	h.proxyToMinerva(w, r, "/api/v1/backfill/status")
 }
 
 // HealthCheck checks if Minerva service is healthy
@@ -194,4 +224,3 @@ func (h *MinervaHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, health)
 }
-

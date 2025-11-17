@@ -27,3 +27,4 @@ COMMENT ON COLUMN bets.ticket_number IS 'Confirmation/ticket number from sportsb
 COMMENT ON COLUMN bets.odds_at_placement IS 'Actual odds at moment of placement (may differ from bet_price if odds moved)';
 
 
+

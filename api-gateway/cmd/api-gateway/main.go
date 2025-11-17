@@ -164,8 +164,14 @@ func main() {
 			r.Get("/players/{playerID}/ml-features", minervaHandler.GetPlayerMLFeatures)
 
 			// Teams
+			r.Get("/teams", minervaHandler.GetTeams)
+			r.Get("/teams/{teamID}", minervaHandler.GetTeam)
 			r.Get("/teams/{teamID}/roster", minervaHandler.GetTeamRoster)
 			r.Get("/teams/{teamID}/schedule", minervaHandler.GetTeamSchedule)
+
+			// Backfill
+			r.Post("/backfill", minervaHandler.StartBackfill)
+			r.Get("/backfill/status", minervaHandler.GetBackfillStatus)
 		})
 	})
 
@@ -236,12 +242,12 @@ func main() {
 
 // Config holds application configuration
 type Config struct {
-	Port           string
-	AlexandriaDSN  string
-	HolocronDSN    string
-	RedisURL       string
-	MinervaURL     string
-	CORSOrigins    []string
+	Port          string
+	AlexandriaDSN string
+	HolocronDSN   string
+	RedisURL      string
+	MinervaURL    string
+	CORSOrigins   []string
 }
 
 // loadConfig loads configuration from environment variables
@@ -252,7 +258,7 @@ func loadConfig() Config {
 		HolocronDSN:   getEnv("HOLOCRON_DSN", "postgres://fortuna:fortuna_dev_password@localhost:5436/holocron?sslmode=disable"),
 		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6380"),
 		MinervaURL:    getEnv("MINERVA_URL", "http://localhost:8085"),
-		CORSOrigins:   []string{
+		CORSOrigins: []string{
 			"http://localhost:3000",
 			"http://localhost:3001",
 			"http://localhost:3002",
@@ -291,4 +297,3 @@ func connectDB(dsn string) (*sql.DB, error) {
 
 	return db, nil
 }
-

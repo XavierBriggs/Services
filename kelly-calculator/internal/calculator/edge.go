@@ -98,3 +98,4 @@ func CalculateEdgeKelly(opportunity models.Opportunity, bankroll, kellyFraction,
 
 
 
+

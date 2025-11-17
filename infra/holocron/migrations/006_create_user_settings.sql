@@ -68,3 +68,4 @@ COMMENT ON COLUMN user_settings.min_edge_threshold IS 'Minimum edge percentage t
 COMMENT ON COLUMN user_settings.max_stake_pct IS 'Maximum stake as percentage of bankroll (safety cap)';
 
 
+

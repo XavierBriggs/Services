@@ -69,3 +69,4 @@ COMMENT ON COLUMN bet_execution_logs.screenshot_path IS 'Path to screenshot save
 -- No seed data for bot tables - credentials must be added via API
 
 
+
