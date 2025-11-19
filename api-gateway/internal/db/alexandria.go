@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/XavierBriggs/fortuna/services/api-gateway/pkg/models"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
@@ -17,6 +18,7 @@ type AlexandriaDB interface {
 	GetCurrentOdds(ctx context.Context, filters OddsFilters) ([]models.CurrentOdds, error)
 	GetOddsHistory(ctx context.Context, filters OddsHistoryFilters) ([]models.OddsHistory, error)
 	GetEventWithOdds(ctx context.Context, eventID string) (*models.EventWithOdds, error)
+	GetBooks(ctx context.Context) ([]models.Book, error)
 	Close() error
 	Ping(ctx context.Context) error
 }
@@ -343,6 +345,61 @@ func (c *Client) GetEventWithOdds(ctx context.Context, eventID string) (*models.
 // Close closes the database connection
 func (c *Client) Close() error {
 	return c.db.Close()
+}
+
+// GetBooks retrieves all books from Alexandria database
+func (c *Client) GetBooks(ctx context.Context) ([]models.Book, error) {
+	query := `
+		SELECT book_key, display_name, book_type, active, regions, supported_sports
+		FROM books
+		ORDER BY display_name ASC
+	`
+
+	rows, err := c.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query books: %w", err)
+	}
+	defer rows.Close()
+
+	var books []models.Book
+	for rows.Next() {
+		var b models.Book
+		var regionsArr pq.StringArray
+		var sportsArr pq.StringArray
+		
+		err := rows.Scan(
+			&b.BookKey,
+			&b.DisplayName,
+			&b.BookType,
+			&b.Active,
+			&regionsArr,
+			&sportsArr,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan book: %w", err)
+		}
+
+		// Convert pq.StringArray to []string
+		if regionsArr != nil {
+			b.Regions = []string(regionsArr)
+		} else {
+			b.Regions = []string{}
+		}
+		
+		if sportsArr != nil {
+			b.SupportedSports = []string(sportsArr)
+		} else {
+			b.SupportedSports = []string{}
+		}
+		
+		books = append(books, b)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate books: %w", err)
+	}
+
+	return books, nil
 }
 
 // Ping checks database connectivity

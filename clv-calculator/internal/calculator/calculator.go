@@ -182,17 +182,16 @@ func (c *CLVCalculator) updatePerformance(ctx context.Context, betID int64, clv 
 }
 
 // findMatchingLine finds the closing line that matches a bet
+// Uses price-only matching: matches on market_key, book_key, and outcome_name only
+// Point values are ignored since lines move between bet placement and game start
 func findMatchingLine(lines []ClosingLine, bet Bet) *ClosingLine {
 	for i := range lines {
 		line := &lines[i]
+		// Match on market, book, and outcome name only (ignore point)
 		if line.MarketKey == bet.MarketKey &&
 			line.BookKey == bet.BookKey &&
 			line.OutcomeName == bet.OutcomeName {
-			// Points match (or both nil)
-			if (line.Point == nil && bet.Point == nil) ||
-				(line.Point != nil && bet.Point != nil && *line.Point == *bet.Point) {
-				return line
-			}
+			return line
 		}
 	}
 	return nil

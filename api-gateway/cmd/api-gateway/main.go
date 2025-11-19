@@ -131,6 +131,9 @@ func main() {
 		r.Get("/odds/current", handler.GetCurrentOdds)
 		r.Get("/odds/history", handler.GetOddsHistory)
 
+		// Books
+		r.Get("/books", handler.GetBooks)
+
 		// Opportunities
 		r.Get("/opportunities", opportunityHandler.GetOpportunities)
 		r.Get("/opportunities/{id}", opportunityHandler.GetOpportunity)

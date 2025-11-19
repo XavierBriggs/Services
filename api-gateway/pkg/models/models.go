@@ -103,3 +103,13 @@ type BetCreationResult struct {
 	BankrollChange   float64            `json:"bankroll_change"`
 }
 
+// Book represents a sportsbook from Alexandria database
+type Book struct {
+	BookKey         string   `json:"book_key"`
+	DisplayName     string   `json:"display_name"`
+	BookType        string   `json:"book_type"`        // sharp or soft
+	Active          bool     `json:"active"`
+	Regions         []string `json:"regions"`          // Array of regions (us, us2, uk, etc.)
+	SupportedSports []string `json:"supported_sports"` // Array of sport_keys
+}
+

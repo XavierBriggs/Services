@@ -228,6 +228,23 @@ func (h *Handler) GetEventWithOdds(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, eventWithOdds)
 }
 
+// GetBooks retrieves all books from Alexandria database
+func (h *Handler) GetBooks(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	books, err := h.db.GetBooks(ctx)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to retrieve books", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"books": books,
+		"count": len(books),
+	})
+}
+
 // Helper functions
 
 func parseIntParam(r *http.Request, param string, defaultValue int) int {
