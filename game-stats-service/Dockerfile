@@ -25,3 +25,9 @@ CMD ["./game-stats-service"]
 
 
 
+
+
+
+
+
+

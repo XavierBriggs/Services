@@ -126,10 +126,17 @@ func (h *BotHandler) PlaceBetWithBot(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// Forward response
+	// Read the full response body
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to read bot service response", err)
+		return
+	}
+
+	// Forward response with correct headers and full body
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	w.Write(responseBody)
 }
 
 // enrichBetRequest fetches opportunity, event, and team data to enrich the request

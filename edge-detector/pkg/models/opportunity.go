@@ -24,6 +24,7 @@ type Opportunity struct {
 	// Metadata
 	DetectedAt     time.Time `json:"detected_at"`
 	DataAgeSeconds int       `json:"data_age_seconds"`
+	EventStatus    string    `json:"event_status"` // "upcoming" or "live"
 
 	// Legs
 	Legs []OpportunityLeg `json:"legs"`
@@ -54,6 +55,7 @@ type NormalizedOdds struct {
 	Point            *float64  `json:"point,omitempty"`    // For spreads/totals
 	VendorLastUpdate time.Time `json:"vendor_last_update"`
 	ReceivedAt       time.Time `json:"received_at"`
+	EventStatus      string    `json:"event_status"`       // "upcoming" or "live"
 
 	// Normalized values
 	DecimalOdds        float64  `json:"decimal_odds"`
@@ -89,6 +91,12 @@ type Book struct {
 	BookType    BookType `json:"book_type"`
 	Active      bool     `json:"active"`
 }
+
+
+
+
+
+
 
 
 

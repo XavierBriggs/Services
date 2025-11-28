@@ -52,7 +52,7 @@ func (h *Handler) GetEvents(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	sportKey := r.URL.Query().Get("sport")
 	status := r.URL.Query().Get("status")
-	limit := parseIntParam(r, "limit", 100)
+	limit := parseIntParam(r, "limit", 0) // 0 = no limit
 	offset := parseIntParam(r, "offset", 0)
 
 	// Validate limit

@@ -60,18 +60,18 @@ type LegRequest struct {
 
 // PlaceBetResponse is the response from bet placement
 type PlaceBetResponse struct {
-	Success bool
-	Results []LegResult
+	Success bool        `json:"success"`
+	Results []LegResult `json:"results"`
 }
 
 // LegResult contains the result for a single leg
 type LegResult struct {
-	BookKey      string
-	Success      bool
-	BetID        *int64
-	TicketNumber string
-	LatencyMs    int64
-	Error        string
+	BookKey      string `json:"book_key"`
+	Success      bool   `json:"success"`
+	BetID        *int64 `json:"bet_id,omitempty"`
+	TicketNumber string `json:"ticket_number,omitempty"`
+	LatencyMs    int64  `json:"latency_ms"`
+	Error        string `json:"error,omitempty"`
 }
 
 // NewExecutor creates a new executor
@@ -95,6 +95,31 @@ func NewExecutor(
 
 // PlaceBet executes bet placement for all legs
 func (e *Executor) PlaceBet(ctx context.Context, req PlaceBetRequest) (*PlaceBetResponse, error) {
+	// Check for idempotency - if this request was already processed successfully,
+	// return the cached result from Holocron to prevent duplicate bets
+	if len(req.Legs) > 0 {
+		existingBets, err := e.checkExistingBets(ctx, req.OpportunityID, req.Legs)
+		if err == nil && len(existingBets) > 0 {
+			// Found existing bets for this request - return cached response
+			fmt.Printf("⚠️  Idempotency check: Found %d existing bet(s) for opportunity %d, returning cached response\n", 
+				len(existingBets), req.OpportunityID)
+			
+			allSuccess := true
+			results := []LegResult{}
+			for _, bet := range existingBets {
+				if bet.BetID == nil {
+					allSuccess = false
+				}
+				results = append(results, bet)
+			}
+			
+			return &PlaceBetResponse{
+				Success: allSuccess,
+				Results: results,
+			}, nil
+		}
+	}
+	
 	// Use enriched data if provided, otherwise fetch from DB
 	var opportunity *transformer.Opportunity
 	var eventInfo *transformer.EventInfo
@@ -238,18 +263,50 @@ func (e *Executor) executeLeg(
 	var talosResp *client.TalosBetResponse
 	var execErr error
 	
+	// Define non-retryable error types
+	nonRetryableErrors := map[string]bool{
+		"game_not_found":     true,
+		"validation_error":   true,
+		"line_not_found":     true,
+		"sport_not_found":    true,
+		"line_moved":         true,
+		"stake_error":        true,
+		"submit_error":       true,
+		"min_risk_error":     true,
+		"login_failed":       true,
+		"betonline_error":    true,
+		"unexpected_error":   true,
+	}
+	
 	err = e.retryPolicy.Execute(func() error {
 		talosResp, execErr = e.talosClient.PlaceBet(clientTalosReq)
+		
+		// Check if the response has a non-retryable error
+		if execErr == nil && talosResp != nil && talosResp.Status != "success" {
+			if nonRetryableErrors[talosResp.ErrorType] {
+				fmt.Printf("⚠️  Non-retryable error type '%s': %s (skipping retry)\n", talosResp.ErrorType, talosResp.Message)
+				// Return nil to stop retrying, but keep the error response
+				return nil
+			}
+		}
+		
 		return execErr
 	})
 
-	if err != nil {
+	// Check if bet failed (either from execErr or from talosResp status)
+	if err != nil || (talosResp != nil && talosResp.Status != "success") {
 		latency := time.Since(startTime).Milliseconds()
-		e.betLogger.LogFailure(ctx, opportunity.ID, legReq.BookKey, "manual", int(latency), err.Error())
+		errorMsg := ""
+		if err != nil {
+			errorMsg = err.Error()
+		} else if talosResp != nil {
+			errorMsg = talosResp.Message
+		}
+		e.betLogger.LogFailure(ctx, opportunity.ID, legReq.BookKey, "manual", int(latency), errorMsg)
 		return LegResult{
 			BookKey: legReq.BookKey,
 			Success: false,
-			Error:   err.Error(),
+			Error:   errorMsg,
 		}
 	}
 
@@ -377,10 +434,15 @@ func (e *Executor) fetchOpportunityLegs(ctx context.Context, opportunityID int64
 	return legs, nil
 }
 
-// findLeg finds a leg by book key
+// findLeg finds a leg by book key (with normalization for aliases like betonlineag -> betonline)
 func (e *Executor) findLeg(opportunity *transformer.Opportunity, bookKey string) *transformer.OpportunityLeg {
+	// Normalize the incoming book key (betonlineag -> betonline, bovada -> bovada, etc.)
+	normalizedBookKey := e.transformer.NormalizeBookKey(bookKey)
+	
 	for _, leg := range opportunity.Legs {
-		if leg.BookKey == bookKey {
+		// Also normalize the leg's book key for comparison
+		normalizedLegKey := e.transformer.NormalizeBookKey(leg.BookKey)
+		if normalizedLegKey == normalizedBookKey {
 			return &leg
 		}
 	}
@@ -442,5 +504,76 @@ func mapOppTypeToBetType(oppType string) string {
 		return "straight"
 	}
 	return oppType // middle, scalp
+}
+
+// checkExistingBets checks if bets for this opportunity and legs already exist in Holocron
+func (e *Executor) checkExistingBets(ctx context.Context, opportunityID int64, legs []LegRequest) ([]LegResult, error) {
+	// Query for existing bets placed within the last 5 minutes for this opportunity
+	// This prevents duplicate bets from retry loops
+	query := `
+		SELECT id, book_key, stake_amount, placed_at, bot_latency_ms, result
+		FROM bets
+		WHERE opportunity_id = $1
+		  AND placed_at >= NOW() - INTERVAL '5 minutes'
+		ORDER BY placed_at DESC
+	`
+	
+	rows, err := e.holocronDB.QueryContext(ctx, query, opportunityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	// Build a map of existing bets by book_key
+	existingBets := make(map[string]LegResult)
+	for rows.Next() {
+		var betID int64
+		var bookKey string
+		var stakeAmount float64
+		var placedAt time.Time
+		var latencyMs sql.NullInt64
+		var result sql.NullString
+		
+		err := rows.Scan(&betID, &bookKey, &stakeAmount, &placedAt, &latencyMs, &result)
+		if err != nil {
+			continue
+		}
+		
+		latency := int64(0)
+		if latencyMs.Valid {
+			latency = latencyMs.Int64
+		}
+		
+		existingBets[bookKey] = LegResult{
+			BookKey:   bookKey,
+			Success:   true,
+			BetID:     &betID,
+			LatencyMs: latency,
+		}
+	}
+	
+	// Check if all requested legs have existing bets
+	results := []LegResult{}
+	allFound := true
+	
+	for _, leg := range legs {
+		// Normalize the book key for comparison
+		normalizedBookKey := e.transformer.NormalizeBookKey(leg.BookKey)
+		
+		if existing, ok := existingBets[normalizedBookKey]; ok {
+			results = append(results, existing)
+		} else {
+			allFound = false
+			break
+		}
+	}
+	
+	// Only return existing bets if ALL requested legs were found
+	// This prevents partial responses
+	if allFound && len(results) == len(legs) {
+		return results, nil
+	}
+	
+	return nil, nil
 }
 

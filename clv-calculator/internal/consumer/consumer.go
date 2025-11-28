@@ -3,22 +3,29 @@ package consumer
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
-// EventProcessor processes closing line events
+// EventProcessor processes closing line events for bets
 type EventProcessor interface {
 	ProcessEvent(ctx context.Context, eventID string) error
 }
 
+// OpportunityProcessor processes closing line events for opportunities
+type OpportunityProcessor interface {
+	ProcessOpportunities(ctx context.Context, eventID string) error
+}
+
 // Consumer consumes from Redis stream
 type Consumer struct {
-	redisClient   *redis.Client
-	streamName    string
-	consumerGroup string
-	processor     EventProcessor
+	redisClient          *redis.Client
+	streamName           string
+	consumerGroup        string
+	processor            EventProcessor
+	opportunityProcessor OpportunityProcessor
 }
 
 // NewConsumer creates a new stream consumer
@@ -31,12 +38,16 @@ func NewConsumer(redisClient *redis.Client, streamName, consumerGroup string, pr
 	}
 }
 
+// SetOpportunityProcessor sets the opportunity processor for CLV validation
+func (c *Consumer) SetOpportunityProcessor(processor OpportunityProcessor) {
+	c.opportunityProcessor = processor
+}
+
 // Start starts consuming from the stream
 func (c *Consumer) Start(ctx context.Context) error {
 	// Create consumer group if it doesn't exist
-	err := c.redisClient.XGroupCreateMkStream(ctx, c.streamName, c.consumerGroup, "0").Err()
-	if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
-		return fmt.Errorf("create consumer group: %w", err)
+	if err := c.ensureConsumerGroup(ctx); err != nil {
+		return err
 	}
 
 	fmt.Println("✓ Consumer group ready")
@@ -55,6 +66,20 @@ func (c *Consumer) Start(ctx context.Context) error {
 	}
 }
 
+// ensureConsumerGroup creates the consumer group if it doesn't exist
+// Uses "0" to process all messages from the beginning (for recovery after Redis restart)
+func (c *Consumer) ensureConsumerGroup(ctx context.Context) error {
+	err := c.redisClient.XGroupCreateMkStream(ctx, c.streamName, c.consumerGroup, "0").Err()
+	if err != nil {
+		if err.Error() == "BUSYGROUP Consumer Group name already exists" {
+			return nil // Group exists, that's fine
+		}
+		return fmt.Errorf("create consumer group: %w", err)
+	}
+	fmt.Printf("✓ Created consumer group: %s for stream: %s\n", c.consumerGroup, c.streamName)
+	return nil
+}
+
 func (c *Consumer) consumeBatch(ctx context.Context) error {
 	// Read from stream
 	streams, err := c.redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{
@@ -71,6 +96,11 @@ func (c *Consumer) consumeBatch(ctx context.Context) error {
 	}
 
 	if err != nil {
+		// Handle NOGROUP error - consumer group was lost (e.g., Redis restart)
+		if strings.Contains(err.Error(), "NOGROUP") {
+			fmt.Printf("⚠️  Consumer group lost, recreating: %s\n", c.consumerGroup)
+			return c.ensureConsumerGroup(ctx)
+		}
 		return fmt.Errorf("xreadgroup: %w", err)
 	}
 
@@ -99,9 +129,27 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) e
 
 	fmt.Printf("[CLV] Processing event: %s\n", eventID)
 
-	// Process event
-	return c.processor.ProcessEvent(ctx, eventID)
+	// Process bets CLV
+	if err := c.processor.ProcessEvent(ctx, eventID); err != nil {
+		fmt.Printf("[CLV] Bet processing error for %s: %v\n", eventID, err)
+		// Continue to opportunity processing even if bet processing fails
+	}
+
+	// Process opportunities CLV (validates edge detector accuracy)
+	if c.opportunityProcessor != nil {
+		if err := c.opportunityProcessor.ProcessOpportunities(ctx, eventID); err != nil {
+			fmt.Printf("[CLV-Opp] Opportunity processing error for %s: %v\n", eventID, err)
+		}
+	}
+
+	return nil
 }
+
+
+
+
+
+
 
 
 

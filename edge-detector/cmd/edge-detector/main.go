@@ -115,10 +115,32 @@ func main() {
 			case <-detectCtx.Done():
 				return
 			case <-ticker.C:
-				detected, errors := detectionEngine.GetMetrics()
+				detected, skipped, errors := detectionEngine.GetMetrics()
 				avgTotal, avgDetection := detectionEngine.GetLatencyMetrics()
-				fmt.Printf("📊 Metrics: detected=%d errors=%d avg_latency=%.1fms (detection=%.1fms)\n", 
-					detected, errors, avgTotal, avgDetection)
+				fmt.Printf("📊 Metrics: detected=%d skipped=%d errors=%d avg_latency=%.1fms (detection=%.1fms)\n",
+					detected, skipped, errors, avgTotal, avgDetection)
+			}
+		}
+	}()
+
+	// Start periodic stale opportunity finalizer
+	// This catches any opportunities that weren't finalized through cache cleanup
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-detectCtx.Done():
+				return
+			case <-ticker.C:
+				// Finalize opportunities not seen in last 5 minutes
+				finalized, err := holocronWriter.FinalizeStaleOpportunities(detectCtx, 300)
+				if err != nil {
+					fmt.Printf("⚠️  Error finalizing stale opportunities: %v\n", err)
+				} else if finalized > 0 {
+					fmt.Printf("🔒 Finalized %d stale opportunities\n", finalized)
+				}
 			}
 		}
 	}()
@@ -161,23 +183,23 @@ func main() {
 
 // Config holds edge detector configuration
 type Config struct {
-	RedisURL       string
-	RedisPassword  string
-	HolocronDSN    string
-	AlexandriaDSN  string
-	ConsumerID     string
-	GroupName      string
+	RedisURL      string
+	RedisPassword string
+	HolocronDSN   string
+	AlexandriaDSN string
+	ConsumerID    string
+	GroupName     string
 }
 
 // loadConfig loads configuration from environment variables
 func loadConfig() Config {
 	return Config{
-		RedisURL:       getEnv("REDIS_URL", "localhost:6380"),
-		RedisPassword:  os.Getenv("REDIS_PASSWORD"),
-		HolocronDSN:    getEnv("HOLOCRON_DSN", "postgres://fortuna:fortuna_pw@localhost:5436/holocron?sslmode=disable"),
-		AlexandriaDSN:  getEnv("ALEXANDRIA_DSN", "postgres://fortuna:fortuna_pw@localhost:5432/alexandria?sslmode=disable"),
-		ConsumerID:     getEnv("EDGE_DETECTOR_CONSUMER_ID", "edge-detector-1"),
-		GroupName:      getEnv("EDGE_DETECTOR_GROUP_NAME", "edge-detectors"),
+		RedisURL:      getEnv("REDIS_URL", "localhost:6380"),
+		RedisPassword: os.Getenv("REDIS_PASSWORD"),
+		HolocronDSN:   getEnv("HOLOCRON_DSN", "postgres://fortuna:fortuna_pw@localhost:5436/holocron?sslmode=disable"),
+		AlexandriaDSN: getEnv("ALEXANDRIA_DSN", "postgres://fortuna:fortuna_pw@localhost:5432/alexandria?sslmode=disable"),
+		ConsumerID:    getEnv("EDGE_DETECTOR_CONSUMER_ID", "edge-detector-1"),
+		GroupName:     getEnv("EDGE_DETECTOR_GROUP_NAME", "edge-detectors"),
 	}
 }
 
@@ -188,4 +210,3 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
-

@@ -75,6 +75,7 @@ func (d *EdgeDetector) Detect(ctx context.Context, odds models.NormalizedOdds, m
 		FairPrice:       &fairPrice,
 		DetectedAt:      time.Now(),
 		DataAgeSeconds:  int(dataAge.Seconds()),
+		EventStatus:     odds.EventStatus,
 		Legs: []models.OpportunityLeg{
 			{
 				BookKey:        odds.BookKey,

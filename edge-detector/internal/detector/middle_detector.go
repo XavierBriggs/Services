@@ -108,6 +108,7 @@ func (d *MiddleDetector) Detect(ctx context.Context, odds models.NormalizedOdds,
 								FairPrice:       nil, // No single fair price for middles
 								DetectedAt:      time.Now(),
 								DataAgeSeconds:  int(dataAge.Seconds()),
+								EventStatus:     cand1.odds.EventStatus, // Use event status from first leg
 								Legs: []models.OpportunityLeg{
 									{
 										BookKey:        cand1.odds.BookKey,

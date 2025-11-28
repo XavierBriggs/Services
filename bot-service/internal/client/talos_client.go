@@ -34,6 +34,7 @@ type TalosBetRequest struct {
 type TalosBetResponse struct {
 	Status     string                 `json:"status"`
 	Message    string                 `json:"message"`
+	ErrorType  string                 `json:"error_type,omitempty"`
 	RequestID  string                 `json:"request_id,omitempty"`
 	BetDetails map[string]interface{} `json:"bet_details,omitempty"`
 	Book       string                 `json:"book,omitempty"`
@@ -117,7 +118,7 @@ type BotHealthResponse struct {
 
 // CheckHealth checks if a specific book bot is healthy
 func (c *TalosClient) CheckHealth(bookKey string) (bool, error) {
-	resp, err := c.httpClient.Get(c.baseURL + "/health")
+	resp, err := c.httpClient.Get(c.baseURL + "/api/health")
 	if err != nil {
 		return false, err
 	}
@@ -140,9 +141,9 @@ func (c *TalosClient) CheckHealth(bookKey string) (bool, error) {
 	return botStatus.Healthy, nil
 }
 
-// GetBotHealthDirect gets health and balance directly from a bot's /health endpoint
+// GetBotHealthDirect gets health and balance directly from a bot's /api/health endpoint
 func (c *TalosClient) GetBotHealthDirect(botURL string) (*BotHealthResponse, error) {
-	resp, err := c.httpClient.Get(botURL + "/health")
+	resp, err := c.httpClient.Get(botURL + "/api/health")
 	if err != nil {
 		return nil, err
 	}

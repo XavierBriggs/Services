@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/XavierBriggs/fortuna/services/edge-detector/pkg/models"
@@ -33,15 +34,28 @@ func NewStreamConsumer(client *redis.Client, consumerID, groupName string) *Stre
 	}
 }
 
+// ensureConsumerGroup creates the consumer group if it doesn't exist
+// Uses "0" to process all messages from the beginning (for recovery after Redis restart)
+func (c *StreamConsumer) ensureConsumerGroup(ctx context.Context, streamKey string) error {
+	err := c.client.XGroupCreateMkStream(ctx, streamKey, c.groupName, "0").Err()
+	if err != nil {
+		if err.Error() == "BUSYGROUP Consumer Group name already exists" {
+			return nil // Group exists, that's fine
+		}
+		return fmt.Errorf("failed to create consumer group: %w", err)
+	}
+	fmt.Printf("✓ Created consumer group: %s for stream: %s\n", c.groupName, streamKey)
+	return nil
+}
+
 // ConsumeStream starts consuming from a stream and returns channels for messages and errors
 func (c *StreamConsumer) ConsumeStream(ctx context.Context, streamKey string) (<-chan Message, <-chan error) {
 	messageCh := make(chan Message, 100)
 	errorCh := make(chan error, 10)
 
 	// Create consumer group if it doesn't exist
-	err := c.client.XGroupCreateMkStream(ctx, streamKey, c.groupName, "0").Err()
-	if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
-		errorCh <- fmt.Errorf("failed to create consumer group: %w", err)
+	if err := c.ensureConsumerGroup(ctx, streamKey); err != nil {
+		errorCh <- err
 		close(messageCh)
 		close(errorCh)
 		return messageCh, errorCh
@@ -73,6 +87,14 @@ func (c *StreamConsumer) ConsumeStream(ctx context.Context, streamKey string) (<
 					if ctx.Err() != nil {
 						// Context cancelled
 						return
+					}
+					// Handle NOGROUP error - consumer group was lost (e.g., Redis restart)
+					if strings.Contains(err.Error(), "NOGROUP") {
+						fmt.Printf("⚠️  Consumer group lost, recreating: %s\n", c.groupName)
+						if recreateErr := c.ensureConsumerGroup(ctx, streamKey); recreateErr != nil {
+							errorCh <- fmt.Errorf("failed to recreate consumer group: %w", recreateErr)
+						}
+						continue
 					}
 					errorCh <- fmt.Errorf("error reading from stream: %w", err)
 					time.Sleep(1 * time.Second)

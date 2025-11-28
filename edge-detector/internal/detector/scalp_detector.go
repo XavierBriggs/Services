@@ -73,6 +73,7 @@ func (d *ScalpDetector) Detect(ctx context.Context, odds models.NormalizedOdds, 
 							FairPrice:       nil, // No fair price for scalps (guaranteed profit)
 							DetectedAt:      time.Now(),
 							DataAgeSeconds:  int(dataAge.Seconds()),
+							EventStatus:     odds1.EventStatus, // Use event status from first leg
 							Legs: []models.OpportunityLeg{
 								{
 									BookKey:        odds1.BookKey,
@@ -144,6 +145,7 @@ func (d *ScalpDetector) detectThreeWayScalps(odds models.NormalizedOdds, outcome
 							FairPrice:       nil,
 							DetectedAt:      time.Now(),
 							DataAgeSeconds:  int(dataAge.Seconds()),
+							EventStatus:     odds1.EventStatus, // Use event status from first leg
 							Legs: []models.OpportunityLeg{
 								{
 									BookKey:        odds1.BookKey,
@@ -236,6 +238,12 @@ func CalculateStakes(decimalOdds []float64, totalStake float64) []float64 {
 
 	return stakes
 }
+
+
+
+
+
+
 
 
 

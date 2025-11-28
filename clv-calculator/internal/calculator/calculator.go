@@ -217,6 +217,155 @@ func americanToDecimal(american int) float64 {
 	return (100.0 / float64(-american)) + 1.0
 }
 
+// =========================================================================
+// OPPORTUNITY CLV - Validates edge detector accuracy
+// =========================================================================
 
+// OpportunityLeg represents an opportunity leg for CLV calculation
+type OpportunityLeg struct {
+	ID            int64
+	OpportunityID int64
+	BookKey       string
+	OutcomeName   string
+	Price         int
+	Point         *float64
+	LegEdgePct    *float64
+	EventID       string
+	MarketKey     string
+	DetectedAt    time.Time
+}
 
+// ProcessOpportunities calculates CLV for all opportunity legs on an event
+// This validates edge detector accuracy by comparing detected prices to closing lines
+func (c *CLVCalculator) ProcessOpportunities(ctx context.Context, eventID string) error {
+	// Get closing lines for event (reuse existing method)
+	closingLines, err := c.getClosingLines(ctx, eventID)
+	if err != nil {
+		return fmt.Errorf("get closing lines: %w", err)
+	}
 
+	if len(closingLines) == 0 {
+		// No closing lines, can't calculate opportunity CLV
+		return nil
+	}
+
+	// Get opportunity legs for this event
+	legs, err := c.getOpportunityLegs(ctx, eventID)
+	if err != nil {
+		return fmt.Errorf("get opportunity legs: %w", err)
+	}
+
+	if len(legs) == 0 {
+		// No opportunities for this event
+		return nil
+	}
+
+	// Calculate CLV for each opportunity leg
+	processed := 0
+	for _, leg := range legs {
+		// Find matching closing line
+		closingLine := findMatchingLineForLeg(closingLines, leg)
+		if closingLine == nil {
+			// No matching closing line - skip silently (common for some book/market combos)
+			continue
+		}
+
+		// Calculate CLV (same formula as bet CLV)
+		clv := calculateCLV(leg.Price, closingLine.ClosingPrice)
+
+		// Calculate edge at close (using closing line price vs fair price)
+		// For now, we store the detected edge and let analytics calculate the rest
+		edgeAtDetection := float64(0)
+		if leg.LegEdgePct != nil {
+			edgeAtDetection = *leg.LegEdgePct
+		}
+
+		// Insert into opportunity_performance
+		err := c.insertOpportunityPerformance(ctx, leg.ID, leg.Price, closingLine.ClosingPrice, clv, edgeAtDetection)
+		if err != nil {
+			fmt.Printf("[CLV-Opp] Failed to insert performance for leg %d: %v\n", leg.ID, err)
+			continue
+		}
+
+		processed++
+	}
+
+	if processed > 0 {
+		fmt.Printf("[CLV-Opp] Processed %d/%d opportunity legs for event %s\n", processed, len(legs), eventID)
+	}
+
+	return nil
+}
+
+// getOpportunityLegs retrieves all opportunity legs for an event
+func (c *CLVCalculator) getOpportunityLegs(ctx context.Context, eventID string) ([]OpportunityLeg, error) {
+	query := `
+		SELECT ol.id, ol.opportunity_id, ol.book_key, ol.outcome_name, ol.price, ol.point, ol.leg_edge_pct,
+		       o.event_id, o.market_key, o.detected_at
+		FROM opportunity_legs ol
+		JOIN opportunities o ON ol.opportunity_id = o.id
+		WHERE o.event_id = $1
+		  AND ol.id NOT IN (SELECT opportunity_leg_id FROM opportunity_performance)
+	`
+
+	rows, err := c.holocronDB.QueryContext(ctx, query, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var legs []OpportunityLeg
+	for rows.Next() {
+		var leg OpportunityLeg
+		err := rows.Scan(
+			&leg.ID,
+			&leg.OpportunityID,
+			&leg.BookKey,
+			&leg.OutcomeName,
+			&leg.Price,
+			&leg.Point,
+			&leg.LegEdgePct,
+			&leg.EventID,
+			&leg.MarketKey,
+			&leg.DetectedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		legs = append(legs, leg)
+	}
+
+	return legs, nil
+}
+
+// findMatchingLineForLeg finds the closing line that matches an opportunity leg
+func findMatchingLineForLeg(lines []ClosingLine, leg OpportunityLeg) *ClosingLine {
+	for i := range lines {
+		line := &lines[i]
+		// Match on market, book, and outcome name (same as bet matching)
+		if line.MarketKey == leg.MarketKey &&
+			line.BookKey == leg.BookKey &&
+			line.OutcomeName == leg.OutcomeName {
+			return line
+		}
+	}
+	return nil
+}
+
+// insertOpportunityPerformance inserts CLV data for an opportunity leg
+func (c *CLVCalculator) insertOpportunityPerformance(ctx context.Context, legID int64, detectedPrice, closingPrice int, clv, edgeAtDetection float64) error {
+	query := `
+		INSERT INTO opportunity_performance (
+			opportunity_leg_id, detected_price, closing_price, clv_cents, edge_at_detection, recorded_at
+		) VALUES ($1, $2, $3, $4, $5, NOW())
+		ON CONFLICT (opportunity_leg_id) DO UPDATE SET
+			detected_price = EXCLUDED.detected_price,
+			closing_price = EXCLUDED.closing_price,
+			clv_cents = EXCLUDED.clv_cents,
+			edge_at_detection = EXCLUDED.edge_at_detection,
+			recorded_at = EXCLUDED.recorded_at
+	`
+
+	_, err := c.holocronDB.ExecContext(ctx, query, legID, detectedPrice, closingPrice, clv, edgeAtDetection)
+	return err
+}

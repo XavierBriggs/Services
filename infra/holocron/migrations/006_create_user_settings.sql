@@ -69,3 +69,9 @@ COMMENT ON COLUMN user_settings.max_stake_pct IS 'Maximum stake as percentage of
 
 
 
+
+
+
+
+
+

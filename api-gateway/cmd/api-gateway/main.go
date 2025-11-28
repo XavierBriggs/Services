@@ -96,6 +96,8 @@ func main() {
 	gamesHandler := handlers.NewGamesHandler(redisClient)
 	minervaHandler := handlers.NewMinervaHandler(config.MinervaURL)
 	botHandler := handlers.NewBotHandler(config.BotServiceURL, holocronDB, alexandriaDB, atlasDB)
+	autoBettingHandler := handlers.NewAutoBettingHandlers(holocronDB)
+	analyticsHandler := handlers.NewAnalyticsHandler(config.AnalyticsURL)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -146,7 +148,7 @@ func main() {
 		r.Get("/bets/{id}", betHandler.GetBet)
 		r.Get("/bets/summary", betHandler.GetBetSummary)
 		r.Get("/bets/bot-status", botHandler.GetBotStatus)
-		
+
 		// Bots
 		r.Get("/bots/status", botHandler.GetBotsStatus)
 		r.Get("/bots/bets/recent", botHandler.GetRecentBets)
@@ -154,6 +156,14 @@ func main() {
 		// Settings
 		r.Get("/settings", settingsHandler.GetSettings)
 		r.Put("/settings", settingsHandler.UpdateSettings)
+
+		// Auto-Betting
+		r.Get("/auto-betting/settings", autoBettingHandler.GetSettings)
+		r.Put("/auto-betting/settings", autoBettingHandler.UpdateSettings)
+		r.Get("/auto-betting/state", autoBettingHandler.GetState)
+		r.Post("/auto-betting/pause", autoBettingHandler.PauseAutoBetting)
+		r.Post("/auto-betting/resume", autoBettingHandler.ResumeAutoBetting)
+		r.Get("/auto-betting/decisions", autoBettingHandler.GetDecisions)
 
 		// Games (live scores and box scores from game-stats-service)
 		r.Get("/games/today", gamesHandler.HandleGetTodaysGames)
@@ -169,6 +179,7 @@ func main() {
 
 			// Games
 			r.Get("/games/live", minervaHandler.GetLiveGames)
+			r.Get("/games/today", minervaHandler.GetTodaysGames)
 			r.Get("/games/upcoming", minervaHandler.GetUpcomingGames)
 			r.Get("/games", minervaHandler.GetGamesByDate)
 			r.Get("/games/{gameID}", minervaHandler.GetGame)
@@ -191,6 +202,28 @@ func main() {
 			// Backfill
 			r.Post("/backfill", minervaHandler.StartBackfill)
 			r.Get("/backfill/status", minervaHandler.GetBackfillStatus)
+		})
+
+		// Analytics - Opportunity Statistics Service
+		r.Route("/analytics", func(r chi.Router) {
+			r.Get("/stats/summary", analyticsHandler.GetStatsSummary)
+			r.Get("/stats/timeseries", analyticsHandler.GetTimeSeries)
+			r.Get("/stats/profitability", analyticsHandler.GetProfitability)
+			r.Get("/stats/books", analyticsHandler.GetBookStats)
+			r.Get("/stats/scalp-pairs", analyticsHandler.GetScalpPairs)
+			r.Get("/stats/middle-pairs", analyticsHandler.GetMiddlePairs)
+			r.Get("/stats/execution", analyticsHandler.GetExecutionStats)
+			r.Get("/stats/hold-time", analyticsHandler.GetHoldTimeStats)
+			r.Get("/stats/book-pairs", analyticsHandler.GetBestBookPairs)
+			r.Get("/edge-distribution", analyticsHandler.GetEdgeDistribution)
+
+			// Opportunity CLV - Edge Detector Validation
+			r.Get("/stats/opportunity-clv", analyticsHandler.GetOpportunityCLV)
+			r.Get("/stats/edge-accuracy", analyticsHandler.GetEdgeAccuracy)
+
+			// Pair Performance - Volume & ROI Decisions
+			r.Get("/stats/pair-performance", analyticsHandler.GetPairPerformance)
+			r.Post("/stats/pair-performance/refresh", analyticsHandler.RefreshPairPerformance)
 		})
 	})
 
@@ -261,14 +294,15 @@ func main() {
 
 // Config holds application configuration
 type Config struct {
-	Port           string
-	AlexandriaDSN  string
-	HolocronDSN    string
-	AtlasDSN       string
-	RedisURL       string
-	MinervaURL     string
-	BotServiceURL  string
-	CORSOrigins    []string
+	Port          string
+	AlexandriaDSN string
+	HolocronDSN   string
+	AtlasDSN      string
+	RedisURL      string
+	MinervaURL    string
+	BotServiceURL string
+	AnalyticsURL  string
+	CORSOrigins   []string
 }
 
 // loadConfig loads configuration from environment variables
@@ -281,6 +315,7 @@ func loadConfig() Config {
 		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6380"),
 		MinervaURL:    getEnv("MINERVA_URL", "http://localhost:8085"),
 		BotServiceURL: getEnv("BOT_SERVICE_URL", "http://localhost:8090"),
+		AnalyticsURL:  getEnv("ANALYTICS_URL", "http://localhost:8091"),
 		CORSOrigins: []string{
 			"http://localhost:3000",
 			"http://localhost:3001",

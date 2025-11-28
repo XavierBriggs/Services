@@ -13,6 +13,7 @@ type RawOdds struct {
 	Point            *float64  `json:"point,omitempty"`    // For spreads/totals
 	VendorLastUpdate time.Time `json:"vendor_last_update"`
 	ReceivedAt       time.Time `json:"received_at"`
+	EventStatus      string    `json:"event_status"`       // "upcoming" or "live"
 }
 
 // NormalizedOdds represents odds after normalization with fair prices and edges

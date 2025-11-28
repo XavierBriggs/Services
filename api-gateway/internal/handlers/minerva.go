@@ -88,6 +88,11 @@ func (h *MinervaHandler) GetLiveGames(w http.ResponseWriter, r *http.Request) {
 	h.proxyToMinerva(w, r, "/api/v1/games/live")
 }
 
+// GetTodaysGames retrieves all games for today (live, scheduled, final)
+func (h *MinervaHandler) GetTodaysGames(w http.ResponseWriter, r *http.Request) {
+	h.proxyToMinerva(w, r, "/api/v1/games/today")
+}
+
 // GetUpcomingGames retrieves upcoming scheduled games
 func (h *MinervaHandler) GetUpcomingGames(w http.ResponseWriter, r *http.Request) {
 	h.proxyToMinerva(w, r, "/api/v1/games/upcoming")

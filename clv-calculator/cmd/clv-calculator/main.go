@@ -72,6 +72,10 @@ func main() {
 		config.ConsumerGroup,
 		calc,
 	)
+	
+	// Enable opportunity CLV processing (validates edge detector accuracy)
+	streamConsumer.SetOpportunityProcessor(calc)
+	fmt.Println("✓ Opportunity CLV processing enabled")
 
 	// Start consumer
 	ctx, cancel := context.WithCancel(context.Background())
@@ -123,6 +127,12 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
+
+
+
+
+
+
 
 
 

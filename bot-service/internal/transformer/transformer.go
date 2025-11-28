@@ -45,24 +45,27 @@ type EventInfo struct {
 
 // LegRequest contains the bet request for a leg
 type LegRequest struct {
-	BookKey     string
-	OutcomeName string
-	Stake       float64
+	BookKey      string
+	OutcomeName  string
+	Stake        float64
 	ExpectedOdds int
 }
 
 // TalosBetRequest is the format sent to Talos bots
 type TalosBetRequest struct {
-	Book       string
-	Team1      string // Short name (lowercase)
-	Team2      string // Short name (lowercase)
-	BetTeam    string // Short name (lowercase)
-	BetType    string
-	BetPeriod  string
-	BetAmount  string
-	BetOdds    string
-	Sport      string
-	RequestID  string
+	Book          string `json:"book"`
+	Team1         string `json:"team1"`           // Full name - "Sacramento Kings"
+	Team1Mascot   string `json:"team1_mascot"`    // Just mascot (lowercase) - "kings"
+	Team2         string `json:"team2"`           // Full name - "Memphis Grizzlies"
+	Team2Mascot   string `json:"team2_mascot"`    // Just mascot (lowercase) - "grizzlies"
+	BetTeam       string `json:"bet_team"`        // Full name
+	BetTeamMascot string `json:"bet_team_mascot"` // Just mascot (lowercase)
+	BetType       string `json:"bet_type"`
+	BetPeriod     string `json:"bet_period"`
+	BetAmount     string `json:"bet_amount"`
+	BetOdds       string `json:"bet_odds"` // With sign: "-110" or "+150"
+	Sport         string `json:"sport"`
+	RequestID     string `json:"request_id"`
 }
 
 // NewTransformer creates a new transformer
@@ -117,17 +120,26 @@ func (t *Transformer) Transform(
 	// Generate request ID
 	requestID := fmt.Sprintf("fortuna_%d_%d_%s", opportunity.ID, time.Now().Unix(), legReq.BookKey)
 
+	// Determine bet team full name
+	betTeamFull := eventInfo.AwayTeam
+	if strings.EqualFold(betTeamShort, team2Short) || strings.Contains(strings.ToLower(eventInfo.HomeTeam), strings.ToLower(betTeamShort)) {
+		betTeamFull = eventInfo.HomeTeam
+	}
+
 	return &TalosBetRequest{
-		Book:       talosBookName,
-		Team1:      strings.ToLower(team1Short), // Convert to lowercase for bots
-		Team2:      strings.ToLower(team2Short), // Convert to lowercase for bots
-		BetTeam:    strings.ToLower(betTeamShort), // Convert to lowercase for bots
-		BetType:    betType,
-		BetPeriod:  "game", // Default, can be configurable
-		BetAmount:  fmt.Sprintf("%.2f", legReq.Stake),
-		BetOdds:    fmt.Sprintf("%d", leg.Price),
-		Sport:      sport,
-		RequestID:  requestID,
+		Book:          talosBookName,
+		Team1:         eventInfo.AwayTeam,            // Full name - "Sacramento Kings"
+		Team1Mascot:   strings.ToLower(team1Short),   // Mascot (lowercase) - "kings"
+		Team2:         eventInfo.HomeTeam,            // Full name - "Memphis Grizzlies"
+		Team2Mascot:   strings.ToLower(team2Short),   // Mascot (lowercase) - "grizzlies"
+		BetTeam:       betTeamFull,                   // Full name
+		BetTeamMascot: strings.ToLower(betTeamShort), // Mascot (lowercase)
+		BetType:       betType,
+		BetPeriod:     "game", // Default, can be configurable
+		BetAmount:     fmt.Sprintf("%.2f", legReq.Stake),
+		BetOdds:       formatOdds(leg.Price),
+		Sport:         sport,
+		RequestID:     requestID,
 	}, nil
 }
 
@@ -145,12 +157,12 @@ func (t *Transformer) TransformWithEventInfo(
 	if team1Short == "" {
 		team1Short = t.extractShortNameFromFull(eventInfo.AwayTeam)
 	}
-	
+
 	team2Short := eventInfo.HomeTeamShort
 	if team2Short == "" {
 		team2Short = t.extractShortNameFromFull(eventInfo.HomeTeam)
 	}
-	
+
 	// Determine bet_team from outcome_name using pre-fetched data
 	betTeamShort, err := t.extractBetTeamFromPreFetched(
 		leg.OutcomeName,
@@ -179,17 +191,26 @@ func (t *Transformer) TransformWithEventInfo(
 	// Generate request ID
 	requestID := fmt.Sprintf("fortuna_%d_%d_%s", opportunity.ID, time.Now().Unix(), legReq.BookKey)
 
+	// Determine bet team full name
+	betTeamFull := eventInfo.AwayTeam
+	if strings.EqualFold(betTeamShort, team2Short) || strings.Contains(strings.ToLower(eventInfo.HomeTeam), strings.ToLower(betTeamShort)) {
+		betTeamFull = eventInfo.HomeTeam
+	}
+
 	return &TalosBetRequest{
-		Book:       talosBookName,
-		Team1:      strings.ToLower(team1Short), // Convert to lowercase for bots
-		Team2:      strings.ToLower(team2Short), // Convert to lowercase for bots
-		BetTeam:    strings.ToLower(betTeamShort), // Convert to lowercase for bots
-		BetType:    betType,
-		BetPeriod:  "game", // Default, can be configurable
-		BetAmount:  fmt.Sprintf("%.2f", legReq.Stake),
-		BetOdds:    fmt.Sprintf("%d", leg.Price),
-		Sport:      sport,
-		RequestID:  requestID,
+		Book:          talosBookName,
+		Team1:         eventInfo.AwayTeam,            // Full name - "Sacramento Kings"
+		Team1Mascot:   strings.ToLower(team1Short),   // Mascot (lowercase) - "kings"
+		Team2:         eventInfo.HomeTeam,            // Full name - "Memphis Grizzlies"
+		Team2Mascot:   strings.ToLower(team2Short),   // Mascot (lowercase) - "grizzlies"
+		BetTeam:       betTeamFull,                   // Full name
+		BetTeamMascot: strings.ToLower(betTeamShort), // Mascot (lowercase)
+		BetType:       betType,
+		BetPeriod:     "game", // Default, can be configurable
+		BetAmount:     fmt.Sprintf("%.2f", legReq.Stake),
+		BetOdds:       formatOdds(leg.Price),
+		Sport:         sport,
+		RequestID:     requestID,
 	}, nil
 }
 
@@ -328,15 +349,15 @@ func (t *Transformer) extractBetTeam(
 	homeAbbr := t.getAbbreviation(homeTeam)
 
 	// Try to match outcome_name to a team
-	if strings.Contains(outcomeLower, awayLower) || 
-	   strings.Contains(outcomeLower, strings.ToLower(awayAbbr)) ||
-	   strings.Contains(outcomeLower, strings.ToLower(awayTeam)) {
+	if strings.Contains(outcomeLower, awayLower) ||
+		strings.Contains(outcomeLower, strings.ToLower(awayAbbr)) ||
+		strings.Contains(outcomeLower, strings.ToLower(awayTeam)) {
 		return awayShort, nil
 	}
 
-	if strings.Contains(outcomeLower, homeLower) || 
-	   strings.Contains(outcomeLower, strings.ToLower(homeAbbr)) ||
-	   strings.Contains(outcomeLower, strings.ToLower(homeTeam)) {
+	if strings.Contains(outcomeLower, homeLower) ||
+		strings.Contains(outcomeLower, strings.ToLower(homeAbbr)) ||
+		strings.Contains(outcomeLower, strings.ToLower(homeTeam)) {
 		return homeShort, nil
 	}
 
@@ -357,12 +378,12 @@ func (t *Transformer) extractBetTeam(
 func (t *Transformer) getAbbreviation(teamName string) string {
 	// Simple mapping - could be enhanced
 	abbrMap := map[string]string{
-		"Los Angeles Lakers": "LAL",
-		"Boston Celtics":     "BOS",
+		"Los Angeles Lakers":    "LAL",
+		"Boston Celtics":        "BOS",
 		"Golden State Warriors": "GSW",
-		"Chicago Bulls":      "CHI",
-		"Miami Heat":         "MIA",
-		"New York Knicks":    "NYK",
+		"Chicago Bulls":         "CHI",
+		"Miami Heat":            "MIA",
+		"New York Knicks":       "NYK",
 		// Add more as needed
 	}
 	if abbr, ok := abbrMap[teamName]; ok {
@@ -405,31 +426,31 @@ func (t *Transformer) mapSportKey(sportKey string, bookKey string) string {
 	// BetUS uses: "nba", "nfl", "mlb"
 	// BetOnline uses: "basketball/nba", "football/nfl"
 	// Bovada uses: "basketball", "football", "baseball", "hockey"
-	
+
 	sportMap := map[string]map[string]string{
 		"betus": {
-			"basketball_nba":              "nba",
-			"american_football_nfl":       "nfl",
-			"baseball_mlb":                "mlb",
-			"hockey_nhl":                  "nhl",
-			"basketball_ncaab":             "ncaab",
-			"american_football_ncaaf":      "ncaaf",
+			"basketball_nba":          "nba",
+			"american_football_nfl":   "nfl",
+			"baseball_mlb":            "mlb",
+			"hockey_nhl":              "nhl",
+			"basketball_ncaab":        "ncaab",
+			"american_football_ncaaf": "ncaaf",
 		},
 		"betonline": {
-			"basketball_nba":              "basketball/nba",
-			"american_football_nfl":      "football/nfl",
-			"baseball_mlb":                "baseball/mlb",
-			"hockey_nhl":                  "hockey/nhl",
-			"basketball_ncaab":             "basketball/ncaab",
-			"american_football_ncaaf":     "football/ncaaf",
+			"basketball_nba":          "basketball/nba",
+			"american_football_nfl":   "football/nfl",
+			"baseball_mlb":            "baseball/mlb",
+			"hockey_nhl":              "hockey/nhl",
+			"basketball_ncaab":        "basketball/ncaab",
+			"american_football_ncaaf": "football/ncaaf",
 		},
 		"bovada": {
-			"basketball_nba":              "basketball",
-			"american_football_nfl":       "football",
-			"baseball_mlb":                "baseball",
-			"hockey_nhl":                  "hockey",
-			"basketball_ncaab":             "basketball",
-			"american_football_ncaaf":      "football",
+			"basketball_nba":          "basketball",
+			"american_football_nfl":   "football",
+			"baseball_mlb":            "baseball",
+			"hockey_nhl":              "hockey",
+			"basketball_ncaab":        "basketball",
+			"american_football_ncaaf": "football",
 		},
 	}
 
@@ -451,11 +472,11 @@ func (t *Transformer) mapSportKey(sportKey string, bookKey string) string {
 func (t *Transformer) mapBookKeyToTalos(bookKey string) string {
 	// Map database book keys to Talos bot names
 	bookMap := map[string]string{
-		"betus":      "betus",
-		"betonline":  "betonline",
+		"betus":       "betus",
+		"betonline":   "betonline",
 		"betonlineag": "betonline", // BetOnline.ag maps to betonline bot
-		"bovada":     "bovada",
-		"bovada.lv":  "bovada",    // Bovada.lv maps to bovada bot
+		"bovada":      "bovada",
+		"bovada.lv":   "bovada", // Bovada.lv maps to bovada bot
 		// Add more mappings as needed
 	}
 
@@ -467,3 +488,29 @@ func (t *Transformer) mapBookKeyToTalos(bookKey string) string {
 	return strings.ToLower(bookKey)
 }
 
+// formatOdds ensures American odds are formatted with a sign (+ or -)
+func formatOdds(price int) string {
+	if price > 0 {
+		return fmt.Sprintf("+%d", price)
+	}
+	return fmt.Sprintf("%d", price)
+}
+
+// NormalizeBookKey normalizes book key aliases (e.g., betonlineag -> betonline)
+func (t *Transformer) NormalizeBookKey(bookKey string) string {
+	// Map book key aliases to canonical names
+	bookMap := map[string]string{
+		"betus":       "betus",
+		"betonline":   "betonline",
+		"betonlineag": "betonline", // BetOnline.ag maps to betonline
+		"bovada":      "bovada",
+		"bovada.lv":   "bovada", // Bovada.lv maps to bovada
+	}
+
+	if normalized, ok := bookMap[strings.ToLower(bookKey)]; ok {
+		return normalized
+	}
+
+	// Default: return lowercase book_key if no mapping found
+	return strings.ToLower(bookKey)
+}

@@ -48,3 +48,9 @@ func (r *RetryPolicy) Execute(fn func() error) error {
 	return fmt.Errorf("failed after %d attempts: %w", r.maxAttempts, lastErr)
 }
 
+
+
+
+
+
+
