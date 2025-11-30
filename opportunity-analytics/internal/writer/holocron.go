@@ -39,7 +39,7 @@ func (w *HolocronWriter) liveFilter(tableAlias string) string {
 }
 
 // GetStatsSummary retrieves aggregated statistics directly from source tables
-func (w *HolocronWriter) GetStatsSummary(ctx context.Context, startTime, endTime time.Time, bookKey, oppType string) (*models.StatsSummary, error) {
+func (w *HolocronWriter) GetStatsSummary(ctx context.Context, startTime, endTime time.Time, bookKey, oppType, gameStatus string) (*models.StatsSummary, error) {
 	var summary models.StatsSummary
 
 	// Query opportunities directly
@@ -69,6 +69,12 @@ func (w *HolocronWriter) GetStatsSummary(ctx context.Context, startTime, endTime
 	if oppType != "" {
 		oppQuery += fmt.Sprintf(" AND o.opportunity_type = $%d", oppArgCount)
 		oppArgs = append(oppArgs, oppType)
+		oppArgCount++
+	}
+
+	if gameStatus != "" {
+		oppQuery += fmt.Sprintf(" AND COALESCE(o.game_status, 'upcoming') = $%d", oppArgCount)
+		oppArgs = append(oppArgs, gameStatus)
 	}
 
 	var totalOpps int
@@ -174,6 +180,8 @@ func (w *HolocronWriter) getStatsByDimension(ctx context.Context, dimension stri
 			SELECT 
 				ol.book_key as key,
 				COUNT(DISTINCT o.id) as opportunity_count,
+				COUNT(DISTINCT CASE WHEN COALESCE(o.game_status, 'upcoming') = 'live' THEN o.id END) as live_count,
+				COUNT(DISTINCT CASE WHEN COALESCE(o.game_status, 'upcoming') = 'upcoming' THEN o.id END) as pregame_count,
 				COALESCE(AVG(o.edge_pct), 0) as avg_edge_pct,
 				COALESCE(MIN(o.edge_pct), 0) as min_edge,
 				COALESCE(MAX(o.edge_pct), 0) as max_edge,
@@ -260,7 +268,7 @@ func (w *HolocronWriter) getStatsByDimension(ctx context.Context, dimension stri
 		var stats models.Stats
 		var avgDuration float64
 
-		err := rows.Scan(&key, &stats.OpportunityCount, &stats.AvgEdgePct, &stats.MinEdgePct, &stats.MaxEdgePct, &avgDuration)
+		err := rows.Scan(&key, &stats.OpportunityCount, &stats.LiveOpportunities, &stats.PregameOpportunities, &stats.AvgEdgePct, &stats.MinEdgePct, &stats.MaxEdgePct, &avgDuration)
 		if err != nil {
 			continue
 		}
@@ -344,12 +352,13 @@ func (w *HolocronWriter) enrichWithBetStats(ctx context.Context, result map[stri
 }
 
 // GetTimeSeries retrieves time series data directly from source tables
-func (w *HolocronWriter) GetTimeSeries(ctx context.Context, startTime, endTime time.Time, bookKey, oppType string) ([]models.TimeSeriesPoint, error) {
+func (w *HolocronWriter) GetTimeSeries(ctx context.Context, startTime, endTime time.Time, bookKey, oppType, gameStatus string) ([]models.TimeSeriesPoint, error) {
 	query := `
 		SELECT 
 			date_trunc('hour', o.detected_at) + 
 				(EXTRACT(minute FROM o.detected_at)::int / 5) * interval '5 minutes' as timestamp_bucket,
 			COALESCE(o.opportunity_type, 'unknown') as opportunity_type,
+			COALESCE(o.game_status, 'upcoming') as game_status,
 			COUNT(DISTINCT o.id) as opportunity_count,
 			COALESCE(AVG(o.edge_pct), 0) as avg_edge_pct,
 			COALESCE(MIN(o.edge_pct), 0) as min_edge,
@@ -373,9 +382,15 @@ func (w *HolocronWriter) GetTimeSeries(ctx context.Context, startTime, endTime t
 	if oppType != "" {
 		query += fmt.Sprintf(" AND o.opportunity_type = $%d", argCount)
 		args = append(args, oppType)
+		argCount++
 	}
 
-	query += ` GROUP BY timestamp_bucket, o.opportunity_type
+	if gameStatus != "" {
+		query += fmt.Sprintf(" AND COALESCE(o.game_status, 'upcoming') = $%d", argCount)
+		args = append(args, gameStatus)
+	}
+
+	query += ` GROUP BY timestamp_bucket, o.opportunity_type, o.game_status
 		ORDER BY timestamp_bucket ASC`
 
 	rows, err := w.db.QueryContext(ctx, query, args...)
@@ -391,6 +406,7 @@ func (w *HolocronWriter) GetTimeSeries(ctx context.Context, startTime, endTime t
 		err := rows.Scan(
 			&point.Timestamp,
 			&point.OpportunityType,
+			&point.GameStatus,
 			&point.OpportunityCount,
 			&point.AvgEdgePct,
 			&point.MinEdgePct,
@@ -409,7 +425,7 @@ func (w *HolocronWriter) GetTimeSeries(ctx context.Context, startTime, endTime t
 }
 
 // GetBestBookPairs retrieves book pair statistics directly from source tables
-func (w *HolocronWriter) GetBestBookPairs(ctx context.Context, startTime, endTime time.Time, oppType string, limit int) ([]models.BookPairSummary, error) {
+func (w *HolocronWriter) GetBestBookPairs(ctx context.Context, startTime, endTime time.Time, oppType, gameStatus string, limit int) ([]models.BookPairSummary, error) {
 	query := `
 		WITH book_pairs AS (
 			SELECT DISTINCT
@@ -417,6 +433,7 @@ func (w *HolocronWriter) GetBestBookPairs(ctx context.Context, startTime, endTim
 				o.opportunity_type,
 				o.edge_pct,
 				o.duration_seconds,
+				COALESCE(o.game_status, 'upcoming') as game_status,
 				CASE WHEN ol1.book_key < ol2.book_key THEN ol1.book_key ELSE ol2.book_key END as book_key_1,
 				CASE WHEN ol1.book_key < ol2.book_key THEN ol2.book_key ELSE ol1.book_key END as book_key_2
 			FROM opportunities o
@@ -426,10 +443,6 @@ func (w *HolocronWriter) GetBestBookPairs(ctx context.Context, startTime, endTim
 			  AND o.detected_at >= $1 AND o.detected_at <= $2
 			  AND o.opportunity_type IN ('scalp', 'middle')
 	`
-	// Add live game filter if configured
-	if w.excludeLive {
-		query += " AND COALESCE(o.game_status, 'upcoming') != 'live'"
-	}
 
 	args := []interface{}{startTime, endTime}
 	argCount := 3
@@ -437,6 +450,12 @@ func (w *HolocronWriter) GetBestBookPairs(ctx context.Context, startTime, endTim
 	if oppType != "" {
 		query += fmt.Sprintf(" AND o.opportunity_type = $%d", argCount)
 		args = append(args, oppType)
+		argCount++
+	}
+
+	if gameStatus != "" {
+		query += fmt.Sprintf(" AND COALESCE(o.game_status, 'upcoming') = $%d", argCount)
+		args = append(args, gameStatus)
 		argCount++
 	}
 
@@ -448,9 +467,13 @@ func (w *HolocronWriter) GetBestBookPairs(ctx context.Context, startTime, endTim
 			book_key_1 || ' + ' || book_key_2 as pair_name,
 			opportunity_type,
 			COUNT(DISTINCT id) as total_opportunities,
+			COUNT(DISTINCT CASE WHEN game_status = 'live' THEN id END) as live_opportunities,
+			COUNT(DISTINCT CASE WHEN game_status = 'upcoming' THEN id END) as pregame_opportunities,
 			COALESCE(AVG(edge_pct), 0) as avg_edge,
 			COALESCE(MAX(edge_pct), 0) as best_edge,
-			COALESCE(AVG(duration_seconds), 0) as avg_duration
+			COALESCE(AVG(duration_seconds), 0) as avg_duration,
+			COALESCE(MIN(duration_seconds), 0) as min_duration,
+			COALESCE(MAX(duration_seconds), 0) as max_duration
 		FROM book_pairs
 		GROUP BY book_key_1, book_key_2, opportunity_type
 		ORDER BY COUNT(DISTINCT id) DESC
@@ -470,21 +493,27 @@ func (w *HolocronWriter) GetBestBookPairs(ctx context.Context, startTime, endTim
 	var pairs []models.BookPairSummary
 	for rows.Next() {
 		var pair models.BookPairSummary
-		var avgDuration float64
+		var avgDuration, minDuration, maxDuration float64
 		err := rows.Scan(
 			&pair.BookKey1,
 			&pair.BookKey2,
 			&pair.PairName,
 			&pair.OpportunityType,
 			&pair.TotalOpportunities,
+			&pair.LiveOpportunities,
+			&pair.PregameOpportunities,
 			&pair.AvgEdgePct,
 			&pair.BestEdgePct,
 			&avgDuration,
+			&minDuration,
+			&maxDuration,
 		)
 		if err != nil {
 			continue
 		}
 		pair.AvgHoldTimeSeconds = int(avgDuration)
+		pair.MinHoldTimeSeconds = int(minDuration)
+		pair.MaxHoldTimeSeconds = int(maxDuration)
 		pairs = append(pairs, pair)
 	}
 
@@ -532,7 +561,7 @@ func (w *HolocronWriter) enrichPairsWithBetStats(ctx context.Context, pairs []mo
 }
 
 // GetEdgeDistribution retrieves edge distribution directly from opportunities table
-func (w *HolocronWriter) GetEdgeDistribution(ctx context.Context, startTime, endTime time.Time, bookKey, oppType string) (*models.EdgeDistribution, error) {
+func (w *HolocronWriter) GetEdgeDistribution(ctx context.Context, startTime, endTime time.Time, bookKey, oppType, gameStatus string) (*models.EdgeDistribution, error) {
 	query := `
 		SELECT o.edge_pct
 		FROM opportunities o
@@ -554,6 +583,12 @@ func (w *HolocronWriter) GetEdgeDistribution(ctx context.Context, startTime, end
 	if oppType != "" {
 		query += fmt.Sprintf(" AND o.opportunity_type = $%d", argCount)
 		args = append(args, oppType)
+		argCount++
+	}
+
+	if gameStatus != "" {
+		query += fmt.Sprintf(" AND COALESCE(o.game_status, 'upcoming') = $%d", argCount)
+		args = append(args, gameStatus)
 	}
 
 	rows, err := w.db.QueryContext(ctx, query, args...)

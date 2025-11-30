@@ -35,8 +35,8 @@ func (w *HolocronWriter) WriteOpportunity(ctx context.Context, opportunity model
 	opportunityQuery := `
 		INSERT INTO opportunities (
 			opportunity_type, sport_key, event_id, market_key,
-			edge_pct, fair_price, detected_at, data_age_seconds
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			edge_pct, fair_price, detected_at, data_age_seconds, game_status
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id
 	`
 
@@ -52,6 +52,7 @@ func (w *HolocronWriter) WriteOpportunity(ctx context.Context, opportunity model
 		opportunity.FairPrice,
 		opportunity.DetectedAt,
 		opportunity.DataAgeSeconds,
+		opportunity.EventStatus,
 	).Scan(&opportunityID)
 
 	if err != nil {
@@ -207,8 +208,8 @@ func (w *HolocronWriter) UpsertOpportunity(ctx context.Context, opportunity mode
 		INSERT INTO opportunities (
 			opportunity_type, sport_key, event_id, market_key,
 			edge_pct, fair_price, detected_at, data_age_seconds,
-			signature, first_seen_at, last_seen_at, emission_count
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, 1)
+			signature, first_seen_at, last_seen_at, emission_count, game_status
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, 1, $11)
 		RETURNING id
 	`
 
@@ -227,6 +228,7 @@ func (w *HolocronWriter) UpsertOpportunity(ctx context.Context, opportunity mode
 		opportunity.DataAgeSeconds,
 		signature,
 		now,
+		opportunity.EventStatus,
 	).Scan(&opportunityID)
 
 	if err != nil {

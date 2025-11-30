@@ -122,14 +122,16 @@ type StatsSummary struct {
 
 // Stats represents aggregated statistics
 type Stats struct {
-	OpportunityCount int     `json:"opportunity_count"`
-	AvgEdgePct       float64 `json:"avg_edge_pct"`
-	TotalBets        int     `json:"total_bets"`
-	Wins             int     `json:"wins"`
-	Losses           int     `json:"losses"`
-	NetProfit        float64 `json:"net_profit"`
-	ROI              float64 `json:"roi"`
-	AvgCLV           float64 `json:"avg_clv"`
+	OpportunityCount     int     `json:"opportunity_count"`
+	LiveOpportunities    int     `json:"live_opportunities"`    // Opportunities detected during live games
+	PregameOpportunities int     `json:"pregame_opportunities"` // Opportunities detected before game start
+	AvgEdgePct           float64 `json:"avg_edge_pct"`
+	TotalBets            int     `json:"total_bets"`
+	Wins                 int     `json:"wins"`
+	Losses               int     `json:"losses"`
+	NetProfit            float64 `json:"net_profit"`
+	ROI                  float64 `json:"roi"`
+	AvgCLV               float64 `json:"avg_clv"`
 
 	// Enhanced metrics
 	AvgHoldTimeSeconds int     `json:"avg_hold_time_seconds,omitempty"`
@@ -262,18 +264,22 @@ type BookPairStats struct {
 
 // BookPairSummary represents aggregated summary for book pairs
 type BookPairSummary struct {
-	PairName           string  `json:"pair_name"` // "pinnacle + draftkings"
-	BookKey1           string  `json:"book_key_1"`
-	BookKey2           string  `json:"book_key_2"`
-	OpportunityType    string  `json:"opportunity_type"`
-	TotalOpportunities int     `json:"total_opportunities"`
-	AvgEdgePct         float64 `json:"avg_edge_pct"`
-	BestEdgePct        float64 `json:"best_edge_pct"`
-	TotalBets          int     `json:"total_bets"`
-	TotalProfit        float64 `json:"total_profit"`
-	ROI                float64 `json:"roi"`
-	AvgHoldTimeSeconds int     `json:"avg_hold_time_seconds"`
-	ExecutionRate      float64 `json:"execution_rate"` // % of opportunities converted to bets
+	PairName             string  `json:"pair_name"` // "pinnacle + draftkings"
+	BookKey1             string  `json:"book_key_1"`
+	BookKey2             string  `json:"book_key_2"`
+	OpportunityType      string  `json:"opportunity_type"`
+	TotalOpportunities   int     `json:"total_opportunities"`
+	LiveOpportunities    int     `json:"live_opportunities"`    // Opportunities detected during live games
+	PregameOpportunities int     `json:"pregame_opportunities"` // Opportunities detected before game start
+	AvgEdgePct           float64 `json:"avg_edge_pct"`
+	BestEdgePct          float64 `json:"best_edge_pct"`
+	TotalBets            int     `json:"total_bets"`
+	TotalProfit          float64 `json:"total_profit"`
+	ROI                  float64 `json:"roi"`
+	AvgHoldTimeSeconds   int     `json:"avg_hold_time_seconds"`
+	MinHoldTimeSeconds   int     `json:"min_hold_time_seconds"` // Shortest opportunity duration
+	MaxHoldTimeSeconds   int     `json:"max_hold_time_seconds"` // Longest opportunity duration
+	ExecutionRate        float64 `json:"execution_rate"`        // % of opportunities converted to bets
 }
 
 // PairPerformance represents historical performance metrics for a book pair

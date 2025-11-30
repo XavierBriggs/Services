@@ -148,8 +148,9 @@ func (h *Handler) GetStatsSummary(w http.ResponseWriter, r *http.Request) {
 	startTime, endTime := parseTimeRange(r)
 	bookKey := r.URL.Query().Get("book")
 	oppType := r.URL.Query().Get("type")
+	gameStatus := r.URL.Query().Get("game_status")
 
-	summary, err := h.writer.GetStatsSummary(ctx, startTime, endTime, bookKey, oppType)
+	summary, err := h.writer.GetStatsSummary(ctx, startTime, endTime, bookKey, oppType, gameStatus)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to get summary", err)
 		return
@@ -172,8 +173,9 @@ func (h *Handler) GetTimeSeries(w http.ResponseWriter, r *http.Request) {
 	startTime, endTime := parseTimeRange(r)
 	bookKey := r.URL.Query().Get("book")
 	oppType := r.URL.Query().Get("type")
+	gameStatus := r.URL.Query().Get("game_status")
 
-	points, err := h.writer.GetTimeSeries(ctx, startTime, endTime, bookKey, oppType)
+	points, err := h.writer.GetTimeSeries(ctx, startTime, endTime, bookKey, oppType, gameStatus)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to get time series", err)
 		return
@@ -199,8 +201,9 @@ func (h *Handler) GetProfitability(w http.ResponseWriter, r *http.Request) {
 	startTime, endTime := parseTimeRange(r)
 	bookKey := r.URL.Query().Get("book")
 	oppType := r.URL.Query().Get("type")
+	gameStatus := r.URL.Query().Get("game_status")
 
-	summary, err := h.writer.GetStatsSummary(ctx, startTime, endTime, bookKey, oppType)
+	summary, err := h.writer.GetStatsSummary(ctx, startTime, endTime, bookKey, oppType, gameStatus)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to get profitability", err)
 		return
@@ -237,8 +240,9 @@ func (h *Handler) GetBookStats(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	startTime, endTime := parseTimeRange(r)
 	oppType := r.URL.Query().Get("type")
+	gameStatus := r.URL.Query().Get("game_status")
 
-	summary, err := h.writer.GetStatsSummary(ctx, startTime, endTime, "", oppType)
+	summary, err := h.writer.GetStatsSummary(ctx, startTime, endTime, "", oppType, gameStatus)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to get book stats", err)
 		return
@@ -332,19 +336,21 @@ func (h *Handler) GetEdgeDistribution(w http.ResponseWriter, r *http.Request) {
 	startTime, endTime := parseTimeRange(r)
 	bookKey := r.URL.Query().Get("book")
 	oppType := r.URL.Query().Get("type")
+	gameStatus := r.URL.Query().Get("game_status")
 
-	distribution, err := h.writer.GetEdgeDistribution(ctx, startTime, endTime, bookKey, oppType)
+	distribution, err := h.writer.GetEdgeDistribution(ctx, startTime, endTime, bookKey, oppType, gameStatus)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to get edge distribution", err)
 		return
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"distribution": distribution,
-		"start_time":   startTime,
-		"end_time":     endTime,
-		"book_filter":  bookKey,
-		"type_filter":  oppType,
+		"distribution":  distribution,
+		"start_time":    startTime,
+		"end_time":      endTime,
+		"book_filter":   bookKey,
+		"type_filter":   oppType,
+		"status_filter": gameStatus,
 	})
 }
 
@@ -422,13 +428,14 @@ func (h *Handler) GetBestBookPairs(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	startTime, endTime := parseTimeRange(r)
 	oppType := r.URL.Query().Get("type") // "scalp", "middle", or empty for both
+	gameStatus := r.URL.Query().Get("game_status")
 
 	limit := 10 // Default
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		fmt.Sscanf(limitStr, "%d", &limit)
 	}
 
-	pairs, err := h.writer.GetBestBookPairs(ctx, startTime, endTime, oppType, limit)
+	pairs, err := h.writer.GetBestBookPairs(ctx, startTime, endTime, oppType, gameStatus, limit)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to get book pairs", err)
 		return
@@ -456,13 +463,14 @@ func (h *Handler) GetScalpPairs(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	startTime, endTime := parseTimeRange(r)
+	gameStatus := r.URL.Query().Get("game_status")
 
 	limit := 10
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		fmt.Sscanf(limitStr, "%d", &limit)
 	}
 
-	pairs, err := h.writer.GetBestBookPairs(ctx, startTime, endTime, "scalp", limit)
+	pairs, err := h.writer.GetBestBookPairs(ctx, startTime, endTime, "scalp", gameStatus, limit)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to get scalp pairs", err)
 		return
@@ -490,13 +498,14 @@ func (h *Handler) GetMiddlePairs(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	startTime, endTime := parseTimeRange(r)
+	gameStatus := r.URL.Query().Get("game_status")
 
 	limit := 10
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		fmt.Sscanf(limitStr, "%d", &limit)
 	}
 
-	pairs, err := h.writer.GetBestBookPairs(ctx, startTime, endTime, "middle", limit)
+	pairs, err := h.writer.GetBestBookPairs(ctx, startTime, endTime, "middle", gameStatus, limit)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to get middle pairs", err)
 		return

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 	"github.com/XavierBriggs/fortuna/services/alert-service/internal/filter"
 	"github.com/XavierBriggs/fortuna/services/alert-service/internal/notifier"
 	"github.com/XavierBriggs/fortuna/services/alert-service/internal/ratelimit"
+	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -42,12 +44,36 @@ func main() {
 	}
 	fmt.Println("✓ Connected to Redis")
 
+	// Connect to Alexandria DB for event lookups
+	var alexandriaDB *sql.DB
+	if config.AlexandriaDSN != "" {
+		var err error
+		alexandriaDB, err = sql.Open("postgres", config.AlexandriaDSN)
+		if err != nil {
+			fmt.Printf("⚠️  Failed to connect to Alexandria: %v\n", err)
+		} else {
+			alexandriaDB.SetMaxOpenConns(5)
+			alexandriaDB.SetMaxIdleConns(2)
+			if err := alexandriaDB.PingContext(ctx); err != nil {
+				fmt.Printf("⚠️  Failed to ping Alexandria: %v\n", err)
+				alexandriaDB = nil
+			} else {
+				fmt.Println("✓ Connected to Alexandria DB (for event names)")
+			}
+		}
+	}
+
 	// Initialize components
 	streamConsumer := consumer.NewStreamConsumer(redisClient, config.ConsumerID, config.GroupName)
 	alertFilter := filter.NewFilter(config.MinEdgePercent, config.MaxDataAgeSeconds)
 	deduplicator := dedup.NewDeduplicator(redisClient, config.DedupTTLMinutes)
 	rateLimiter := ratelimit.NewTokenBucket(redisClient, config.AlertRateLimit)
 	slackNotifier := notifier.NewSlackNotifier(config.SlackWebhookURL)
+
+	// Set Alexandria DB for event name lookups
+	if alexandriaDB != nil {
+		slackNotifier.SetAlexandriaDB(alexandriaDB)
+	}
 
 	fmt.Printf("✓ Alert Service configured:\n")
 	fmt.Printf("  Min Edge: %.1f%%\n", config.MinEdgePercent)
@@ -218,6 +244,7 @@ type Config struct {
 	MaxDataAgeSeconds int
 	AlertRateLimit    int
 	DedupTTLMinutes   int
+	AlexandriaDSN     string
 }
 
 // loadConfig loads configuration from environment variables
@@ -232,6 +259,7 @@ func loadConfig() Config {
 		MaxDataAgeSeconds: getEnvInt("ALERT_MAX_DATA_AGE_SECONDS", 10),
 		AlertRateLimit:    getEnvInt("ALERT_RATE_LIMIT", 10),
 		DedupTTLMinutes:   getEnvInt("ALERT_DEDUP_TTL_MINUTES", 5),
+		AlexandriaDSN:     os.Getenv("ALEXANDRIA_DSN"),
 	}
 }
 
@@ -260,4 +288,3 @@ func getEnvFloat(key string, defaultValue float64) float64 {
 	}
 	return defaultValue
 }
-
