@@ -147,3 +147,4 @@ echo "  \\dt analytics*    -- List analytics tables"
 echo "  \\d+ analytics_book_stats   -- Show book stats schema"
 echo "  \\d+ analytics_book_pairs   -- Show book pairs schema"
 
+

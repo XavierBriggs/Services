@@ -224,7 +224,7 @@ NORMALIZER_GROUP_NAME=normalizers       # Consumer group name
   "raw_odds": { /* original raw odds */ },
   "decimal_odds": 1.909,
   "implied_probability": 0.5238,
-  "no_vig_probability": 0.50,
+  "no_vig_probability": 0.55,
   "fair_price": -100,
   "edge": 0.05,
   "sharp_consensus": 0.505,

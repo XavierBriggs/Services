@@ -32,3 +32,4 @@ ON analytics_book_stats(book_key, opportunity_type, game_status, timestamp_bucke
 -- Comments for documentation
 COMMENT ON COLUMN analytics_book_stats.game_status IS 'Game status when opportunity detected: upcoming (pregame), live (in-progress)';
 
+

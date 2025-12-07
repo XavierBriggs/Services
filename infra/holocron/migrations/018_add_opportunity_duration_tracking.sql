@@ -54,3 +54,4 @@ COMMENT ON COLUMN opportunities.duration_seconds IS 'Total duration from first t
 COMMENT ON COLUMN opportunities.emission_count IS 'Number of times this opportunity was emitted to stream';
 COMMENT ON COLUMN opportunities.signature IS 'Unique signature for deduplication: type|event|market|legs';
 
+

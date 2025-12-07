@@ -89,3 +89,4 @@ ORDER BY SUM(net_profit) DESC;
 
 COMMENT ON VIEW v_best_scalp_pairs IS 'Best performing book pairs for scalps over last 7 days';
 
+

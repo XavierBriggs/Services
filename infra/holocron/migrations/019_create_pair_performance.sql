@@ -52,3 +52,4 @@ COMMENT ON COLUMN analytics_pair_performance.realized_profit IS 'Net profit from
 COMMENT ON COLUMN analytics_pair_performance.roi_pct IS 'Return on investment: (profit/handle)*100';
 COMMENT ON COLUMN analytics_pair_performance.execution_rate IS 'Percentage of detected opportunities that were bet on';
 
+

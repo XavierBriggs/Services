@@ -24,3 +24,4 @@ COMMENT ON COLUMN analytics_book_pairs.avg_opportunity_clv IS 'Average CLV for t
 COMMENT ON COLUMN analytics_book_pairs.opportunity_clv_count IS 'Number of opportunity legs with CLV calculated';
 COMMENT ON COLUMN analytics_book_pairs.opportunity_clv_accuracy IS 'Percentage of opportunities with positive CLV';
 
+

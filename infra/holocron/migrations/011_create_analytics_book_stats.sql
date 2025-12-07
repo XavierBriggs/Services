@@ -53,3 +53,4 @@ COMMENT ON COLUMN analytics_book_stats.avg_clv IS 'Average closing line value in
 COMMENT ON COLUMN analytics_book_stats.net_profit IS 'Net profit/loss in dollars';
 COMMENT ON COLUMN analytics_book_stats.roi IS 'Return on investment as percentage';
 
+

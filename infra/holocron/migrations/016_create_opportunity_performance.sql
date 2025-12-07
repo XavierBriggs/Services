@@ -40,3 +40,4 @@ COMMENT ON COLUMN opportunity_performance.edge_at_close IS 'Edge percentage calc
 -- clv_cents = (1/1.909 - 1/1.952) * 100 = (0.524 - 0.512) * 100 = 1.2 cents
 -- Positive CLV indicates the detected price was better than closing (edge was real)
 
+
