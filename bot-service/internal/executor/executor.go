@@ -27,7 +27,7 @@ type Executor struct {
 type PlaceBetRequest struct {
 	OpportunityID int64        `json:"opportunity_id"`
 	Legs          []LegRequest `json:"legs"`
-	
+
 	// Enriched data (optional - if provided, skips DB reads)
 	EventInfo   *EventInfo   `json:"event_info,omitempty"`
 	Opportunity *Opportunity `json:"opportunity,omitempty"`
@@ -41,6 +41,7 @@ type EventInfo struct {
 	AwayTeam      string `json:"away_team"`
 	HomeTeamShort string `json:"home_team_short"`
 	AwayTeamShort string `json:"away_team_short"`
+	EventDate     string `json:"event_date,omitempty"` // YYYY-MM-DD format for game key consistency
 }
 
 // Opportunity contains pre-fetched opportunity data
@@ -101,9 +102,9 @@ func (e *Executor) PlaceBet(ctx context.Context, req PlaceBetRequest) (*PlaceBet
 		existingBets, err := e.checkExistingBets(ctx, req.OpportunityID, req.Legs)
 		if err == nil && len(existingBets) > 0 {
 			// Found existing bets for this request - return cached response
-			fmt.Printf("⚠️  Idempotency check: Found %d existing bet(s) for opportunity %d, returning cached response\n", 
+			fmt.Printf("⚠️  Idempotency check: Found %d existing bet(s) for opportunity %d, returning cached response\n",
 				len(existingBets), req.OpportunityID)
-			
+
 			allSuccess := true
 			results := []LegResult{}
 			for _, bet := range existingBets {
@@ -112,18 +113,18 @@ func (e *Executor) PlaceBet(ctx context.Context, req PlaceBetRequest) (*PlaceBet
 				}
 				results = append(results, bet)
 			}
-			
+
 			return &PlaceBetResponse{
 				Success: allSuccess,
 				Results: results,
 			}, nil
 		}
 	}
-	
+
 	// Use enriched data if provided, otherwise fetch from DB
 	var opportunity *transformer.Opportunity
 	var eventInfo *transformer.EventInfo
-	
+
 	if req.Opportunity != nil && req.EventInfo != nil {
 		// Use enriched data - no DB reads needed!
 		opportunity = &transformer.Opportunity{
@@ -134,15 +135,16 @@ func (e *Executor) PlaceBet(ctx context.Context, req PlaceBetRequest) (*PlaceBet
 			MarketKey:       req.Opportunity.MarketKey,
 			EdgePercent:     req.Opportunity.EdgePercent,
 		}
-		
+
 		eventInfo = &transformer.EventInfo{
 			HomeTeam:      req.EventInfo.HomeTeam,
 			AwayTeam:      req.EventInfo.AwayTeam,
 			EventName:     fmt.Sprintf("%s @ %s", req.EventInfo.AwayTeam, req.EventInfo.HomeTeam),
 			HomeTeamShort: req.EventInfo.HomeTeamShort,
 			AwayTeamShort: req.EventInfo.AwayTeamShort,
+			EventDate:     req.EventInfo.EventDate,
 		}
-		
+
 		// Still need to fetch legs from DB (they're not in enriched payload)
 		legs, err := e.fetchOpportunityLegs(ctx, req.OpportunityID)
 		if err != nil {
@@ -204,9 +206,9 @@ func (e *Executor) executeLeg(
 
 	// Convert executor.LegRequest to transformer.LegRequest
 	transformerLegReq := transformer.LegRequest{
-		BookKey:     legReq.BookKey,
-		OutcomeName: legReq.OutcomeName,
-		Stake:       legReq.Stake,
+		BookKey:      legReq.BookKey,
+		OutcomeName:  legReq.OutcomeName,
+		Stake:        legReq.Stake,
 		ExpectedOdds: legReq.ExpectedOdds,
 	}
 
@@ -246,61 +248,86 @@ func (e *Executor) executeLeg(
 	}
 
 	// Convert transformer.TalosBetRequest to client.TalosBetRequest
+	// Include all fields that Python bots expect (base_bot/models.py BetRequest)
 	clientTalosReq := client.TalosBetRequest{
-		Book:      talosReq.Book,
-		Team1:     talosReq.Team1,
-		Team2:     talosReq.Team2,
-		BetTeam:   talosReq.BetTeam,
-		BetType:   talosReq.BetType,
-		BetPeriod: talosReq.BetPeriod,
-		BetAmount: talosReq.BetAmount,
-		BetOdds:   talosReq.BetOdds,
-		Sport:     talosReq.Sport,
-		RequestID: talosReq.RequestID,
+		Book:          talosReq.Book,
+		Team1:         talosReq.Team1,
+		Team1Mascot:   talosReq.Team1Mascot,
+		Team2:         talosReq.Team2,
+		Team2Mascot:   talosReq.Team2Mascot,
+		BetTeam:       talosReq.BetTeam,
+		BetTeamMascot: talosReq.BetTeamMascot,
+		BetType:       talosReq.BetType,
+		BetPeriod:     talosReq.BetPeriod,
+		BetAmount:     talosReq.BetAmount,
+		BetOdds:       talosReq.BetOdds,
+		Sport:         talosReq.Sport,
+		RequestID:     talosReq.RequestID,
+		EventDate:     talosReq.EventDate,
 	}
 
 	// Execute with retry
 	var talosResp *client.TalosBetResponse
 	var execErr error
-	
+
 	// Define non-retryable error types
 	nonRetryableErrors := map[string]bool{
-		"game_not_found":     true,
-		"validation_error":   true,
-		"line_not_found":     true,
-		"sport_not_found":    true,
-		"line_moved":         true,
-		"stake_error":        true,
-		"submit_error":       true,
-		"min_risk_error":     true,
-		"login_failed":       true,
-		"betonline_error":    true,
-		"unexpected_error":   true,
+		"game_not_found":   true,
+		"validation_error": true,
+		"line_not_found":   true,
+		"sport_not_found":  true,
+		"line_moved":       true,
+		"stake_error":      true,
+		"submit_error":     true,
+		"min_risk_error":   true,
+		"login_failed":     true,
+		"betonline_error":  true,
+		"unexpected_error": true,
 	}
-	
+
+	// Use async bet placement with polling (defacto method)
+	// This enqueues the bet and polls for completion, which is more reliable
+	// than the sync endpoint for long-running operations
+	const maxWaitSeconds = 60 // Maximum time to wait for bet completion
+
 	err = e.retryPolicy.Execute(func() error {
-		talosResp, execErr = e.talosClient.PlaceBet(clientTalosReq)
-		
+		talosResp, execErr = e.talosClient.PlaceBetAsyncWithPolling(clientTalosReq, maxWaitSeconds)
+
 		// Check if the response has a non-retryable error
-		if execErr == nil && talosResp != nil && talosResp.Status != "success" {
-			if nonRetryableErrors[talosResp.ErrorType] {
-				fmt.Printf("⚠️  Non-retryable error type '%s': %s (skipping retry)\n", talosResp.ErrorType, talosResp.Message)
+		// Support both new format (ok: false, error_code) and legacy format (status != "success")
+		if execErr == nil && talosResp != nil && !talosResp.OK {
+			errorType := talosResp.ErrorCode
+			if errorType == "" {
+				errorType = talosResp.ErrorType // Fallback to legacy field
+			}
+			if nonRetryableErrors[errorType] {
+				errorMsg := talosResp.ErrorMessage
+				if errorMsg == "" {
+					errorMsg = talosResp.Message // Fallback to legacy field
+				}
+				fmt.Printf("⚠️  Non-retryable error type '%s': %s (skipping retry)\n", errorType, errorMsg)
 				// Return nil to stop retrying, but keep the error response
 				return nil
 			}
 		}
-		
+
 		return execErr
 	})
 
-	// Check if bet failed (either from execErr or from talosResp status)
-	if err != nil || (talosResp != nil && talosResp.Status != "success") {
+	// Check if bet failed (either from execErr or from talosResp.OK being false)
+	// Support both new format (ok: true/false) and legacy format (status == "success")
+	betSucceeded := talosResp != nil && (talosResp.OK || talosResp.Status == "success")
+	if err != nil || !betSucceeded {
 		latency := time.Since(startTime).Milliseconds()
 		errorMsg := ""
 		if err != nil {
 			errorMsg = err.Error()
 		} else if talosResp != nil {
-			errorMsg = talosResp.Message
+			// Prefer new error_message field, fallback to legacy message
+			errorMsg = talosResp.ErrorMessage
+			if errorMsg == "" {
+				errorMsg = talosResp.Message
+			}
 		}
 		e.betLogger.LogFailure(ctx, opportunity.ID, legReq.BookKey, "manual", int(latency), errorMsg)
 		return LegResult{
@@ -438,7 +465,7 @@ func (e *Executor) fetchOpportunityLegs(ctx context.Context, opportunityID int64
 func (e *Executor) findLeg(opportunity *transformer.Opportunity, bookKey string) *transformer.OpportunityLeg {
 	// Normalize the incoming book key (betonlineag -> betonline, bovada -> bovada, etc.)
 	normalizedBookKey := e.transformer.NormalizeBookKey(bookKey)
-	
+
 	for _, leg := range opportunity.Legs {
 		// Also normalize the leg's book key for comparison
 		normalizedLegKey := e.transformer.NormalizeBookKey(leg.BookKey)
@@ -517,13 +544,13 @@ func (e *Executor) checkExistingBets(ctx context.Context, opportunityID int64, l
 		  AND placed_at >= NOW() - INTERVAL '5 minutes'
 		ORDER BY placed_at DESC
 	`
-	
+
 	rows, err := e.holocronDB.QueryContext(ctx, query, opportunityID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	// Build a map of existing bets by book_key
 	existingBets := make(map[string]LegResult)
 	for rows.Next() {
@@ -533,17 +560,17 @@ func (e *Executor) checkExistingBets(ctx context.Context, opportunityID int64, l
 		var placedAt time.Time
 		var latencyMs sql.NullInt64
 		var result sql.NullString
-		
+
 		err := rows.Scan(&betID, &bookKey, &stakeAmount, &placedAt, &latencyMs, &result)
 		if err != nil {
 			continue
 		}
-		
+
 		latency := int64(0)
 		if latencyMs.Valid {
 			latency = latencyMs.Int64
 		}
-		
+
 		existingBets[bookKey] = LegResult{
 			BookKey:   bookKey,
 			Success:   true,
@@ -551,15 +578,15 @@ func (e *Executor) checkExistingBets(ctx context.Context, opportunityID int64, l
 			LatencyMs: latency,
 		}
 	}
-	
+
 	// Check if all requested legs have existing bets
 	results := []LegResult{}
 	allFound := true
-	
+
 	for _, leg := range legs {
 		// Normalize the book key for comparison
 		normalizedBookKey := e.transformer.NormalizeBookKey(leg.BookKey)
-		
+
 		if existing, ok := existingBets[normalizedBookKey]; ok {
 			results = append(results, existing)
 		} else {
@@ -567,13 +594,12 @@ func (e *Executor) checkExistingBets(ctx context.Context, opportunityID int64, l
 			break
 		}
 	}
-	
+
 	// Only return existing bets if ALL requested legs were found
 	// This prevents partial responses
 	if allFound && len(results) == len(legs) {
 		return results, nil
 	}
-	
+
 	return nil, nil
 }
-

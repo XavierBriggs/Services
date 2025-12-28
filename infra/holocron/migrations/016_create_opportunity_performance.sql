@@ -41,3 +41,5 @@ COMMENT ON COLUMN opportunity_performance.edge_at_close IS 'Edge percentage calc
 -- Positive CLV indicates the detected price was better than closing (edge was real)
 
 
+
+

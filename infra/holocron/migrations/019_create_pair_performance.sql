@@ -53,3 +53,5 @@ COMMENT ON COLUMN analytics_pair_performance.roi_pct IS 'Return on investment: (
 COMMENT ON COLUMN analytics_pair_performance.execution_rate IS 'Percentage of detected opportunities that were bet on';
 
 
+
+

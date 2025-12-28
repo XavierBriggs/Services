@@ -55,3 +55,5 @@ COMMENT ON COLUMN opportunities.emission_count IS 'Number of times this opportun
 COMMENT ON COLUMN opportunities.signature IS 'Unique signature for deduplication: type|event|market|legs';
 
 
+
+

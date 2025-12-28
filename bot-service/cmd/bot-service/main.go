@@ -184,7 +184,7 @@ type Config struct {
 func loadConfig() Config {
 	return Config{
 		Port:               getEnvInt("BOT_SERVICE_PORT", 8090),
-		TalosBotManagerURL: getEnv("TALOS_BOT_MANAGER_URL", "http://localhost:5000"),
+		TalosBotManagerURL: getEnv("TALOS_BOT_MANAGER_URL", "http://localhost:5008"),
 		HolocronDSN:        getEnv("HOLOCRON_DSN", ""),
 		AlexandriaDSN:      getEnv("ALEXANDRIA_DSN", ""),
 		AtlasDSN:           getEnv("ATLAS_DSN", ""), // Optional - for team mappings

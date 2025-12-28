@@ -16,3 +16,5 @@ ON opportunities(game_status, detected_at DESC);
 COMMENT ON COLUMN opportunities.game_status IS 'Game status when opportunity detected: upcoming (pregame) or live (in-progress)';
 
 
+
+

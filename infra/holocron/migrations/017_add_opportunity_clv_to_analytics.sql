@@ -25,3 +25,5 @@ COMMENT ON COLUMN analytics_book_pairs.opportunity_clv_count IS 'Number of oppor
 COMMENT ON COLUMN analytics_book_pairs.opportunity_clv_accuracy IS 'Percentage of opportunities with positive CLV';
 
 
+
+

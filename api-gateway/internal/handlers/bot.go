@@ -31,7 +31,7 @@ func NewBotHandler(botServiceURL string, holocronDB, alexandriaDB, atlasDB *sql.
 		alexandriaDB:  alexandriaDB,
 		atlasDB:       atlasDB,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 120 * time.Second, // Long timeout for bot bet placement (async with polling)
 		},
 	}
 }
@@ -66,6 +66,7 @@ type EventInfo struct {
 	AwayTeam      string `json:"away_team"`
 	HomeTeamShort string `json:"home_team_short"`
 	AwayTeamShort string `json:"away_team_short"`
+	EventDate     string `json:"event_date,omitempty"` // YYYY-MM-DD format for game key consistency
 }
 
 // Opportunity contains pre-fetched opportunity data
@@ -170,14 +171,15 @@ func (h *BotHandler) enrichBetRequest(ctx context.Context, req PlaceBetRequest) 
 		return nil, fmt.Errorf("failed to fetch opportunity: %w", err)
 	}
 
-	// 2. Fetch event info from Alexandria
+	// 2. Fetch event info from Alexandria (including commence_time for game key)
 	var eventInfo struct {
-		HomeTeam string
-		AwayTeam string
+		HomeTeam     string
+		AwayTeam     string
+		CommenceTime time.Time
 	}
 
 	eventQuery := `
-		SELECT home_team, away_team
+		SELECT home_team, away_team, commence_time
 		FROM events
 		WHERE event_id = $1
 	`
@@ -185,10 +187,14 @@ func (h *BotHandler) enrichBetRequest(ctx context.Context, req PlaceBetRequest) 
 	err = h.alexandriaDB.QueryRowContext(ctx, eventQuery, opp.EventID).Scan(
 		&eventInfo.HomeTeam,
 		&eventInfo.AwayTeam,
+		&eventInfo.CommenceTime,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch event info: %w", err)
 	}
+
+	// Format event date as YYYY-MM-DD for game key consistency
+	eventDate := eventInfo.CommenceTime.Format("2006-01-02")
 
 	// 3. Fetch team short names from Atlas (batch query)
 	var homeShort, awayShort sql.NullString
@@ -228,6 +234,7 @@ func (h *BotHandler) enrichBetRequest(ctx context.Context, req PlaceBetRequest) 
 			AwayTeam:      eventInfo.AwayTeam,
 			HomeTeamShort: homeTeamShort,
 			AwayTeamShort: awayTeamShort,
+			EventDate:     eventDate,
 		},
 		Opportunity: Opportunity{
 			OpportunityType: opp.OpportunityType,
@@ -318,4 +325,3 @@ func (h *BotHandler) GetBotsStatus(w http.ResponseWriter, r *http.Request) {
 func (h *BotHandler) GetRecentBets(w http.ResponseWriter, r *http.Request) {
 	h.proxyToBotService(w, r, "/api/v1/bots/bets/recent")
 }
-

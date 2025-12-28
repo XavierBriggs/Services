@@ -41,6 +41,7 @@ type EventInfo struct {
 	EventName     string
 	HomeTeamShort string // Optional: from enriched payload
 	AwayTeamShort string // Optional: from enriched payload
+	EventDate     string // YYYY-MM-DD format for game key consistency
 }
 
 // LegRequest contains the bet request for a leg
@@ -66,6 +67,7 @@ type TalosBetRequest struct {
 	BetOdds       string `json:"bet_odds"` // With sign: "-110" or "+150"
 	Sport         string `json:"sport"`
 	RequestID     string `json:"request_id"`
+	EventDate     string `json:"event_date,omitempty"` // YYYY-MM-DD format for game key consistency
 }
 
 // NewTransformer creates a new transformer
@@ -211,6 +213,7 @@ func (t *Transformer) TransformWithEventInfo(
 		BetOdds:       formatOdds(leg.Price),
 		Sport:         sport,
 		RequestID:     requestID,
+		EventDate:     eventInfo.EventDate, // Pass through for game key consistency
 	}, nil
 }
 

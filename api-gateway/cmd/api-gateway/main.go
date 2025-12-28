@@ -107,7 +107,9 @@ func main() {
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(chimiddleware.Recoverer)
-	r.Use(chimiddleware.Timeout(30 * time.Second))
+	// Note: Bot bet placement can take 60-90s, so we use a longer timeout
+	// Individual handlers can have shorter timeouts via context
+	r.Use(chimiddleware.Timeout(120 * time.Second))
 
 	// CORS configuration
 	r.Use(cors.Handler(cors.Options{
@@ -228,12 +230,13 @@ func main() {
 	})
 
 	// Start server
+	// Note: Increased timeouts to support bot bet placement (can take 60-90s)
 	srv := &http.Server{
 		Addr:         config.Port,
 		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 150 * time.Second, // Long timeout for bot operations
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// Graceful shutdown
